@@ -1,0 +1,56 @@
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+}
+
+:root {
+  --primary-color: #409EFF;
+  --bg-color: #f0f2f5;
+  --sidebar-bg: #1d1e1f;
+  --sidebar-text: #bfcbd9;
+  --sidebar-active: #409EFF;
+}
+
+/* 暗色侧边栏 */
+.dark-sidebar .el-menu {
+  background-color: var(--sidebar-bg) !important;
+  border-right: none !important;
+}
+
+.dark-sidebar .el-menu-item,
+.dark-sidebar .el-sub-menu__title {
+  color: var(--sidebar-text) !important;
+  &:hover { background-color: rgba(64, 158, 255, 0.15) !important; }
+  &.is-active { color: var(--sidebar-active) !important; background-color: rgba(64, 158, 255, 0.2) !important; }
+}
+
+/* 全局卡片样式 */
+.el-card {
+  border-radius: 8px;
+  border: none;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+/* 美化表格 */
+.el-table { border-radius: 8px; overflow: hidden; }
+.el-table th.el-table__cell { background-color: #f8f9fa !important; color: #333; font-weight: 600; }
+
+/* 状态标签 */
+.status-online { color: #67C23A; }
+.status-offline { color: #F56C6C; }
+.status-unknown { color: #909399; }
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* 页面过渡 */
+.page-container { padding: 20px; }
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .page-container { padding: 10px; }
+}

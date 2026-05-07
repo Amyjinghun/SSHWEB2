@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  sshweb:
+    build: .
+    container_name: sshweb-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=sshweb
+      - MYSQL_USER=sshweb
+      - MYSQL_PASSWORD=sshweb123456
+      - JWT_SECRET=${JWT_SECRET:-please_change_this_secret_key}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-please_change_this_encryption_key}
+      - SSH_CONNECT_TIMEOUT=10000
+      - SSH_EXEC_TIMEOUT=60000
+      - ENABLE_DANGEROUS_COMMAND_BLOCK=true
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - sshweb-net
+    volumes:
+      - sshweb-logs:/var/log/sshweb
+
+  db:
+    image: mariadb:11
+    container_name: sshweb-db
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=sshweb
+      - MYSQL_USER=sshweb
+      - MYSQL_PASSWORD=sshweb123456
+    volumes:
+      - sshweb-db-data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sshweb-net
+    ports:
+      - "3307:3306"
+
+networks:
+  sshweb-net:
+    driver: bridge
+
+volumes:
+  sshweb-db-data:
+  sshweb-logs:
