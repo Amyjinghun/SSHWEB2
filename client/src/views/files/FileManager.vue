@@ -8,6 +8,7 @@
         <div class="toolbar-actions">
           <el-button @click="goUp" :disabled="!currentPath || currentPath === '/'">上级目录</el-button>
           <el-button type="primary" @click="showUploadDialog = true" :disabled="!serverId"><el-icon><Upload /></el-icon>上传</el-button>
+          <el-button type="success" @click="openBatchUpload"><el-icon><Upload /></el-icon>批量上传</el-button>
           <el-button @click="showNewDialog = true" :disabled="!serverId"><el-icon><FolderAdd /></el-icon>新建</el-button>
         </div>
       </div>
@@ -75,6 +76,52 @@
       <template #footer><el-button @click="showUploadDialog=false">取消</el-button><el-button type="primary" @click="uploadSelectedFile">上传</el-button></template>
     </el-dialog>
 
+    <el-dialog v-model="showBatchUploadDialog" title="批量上传文件" width="760px" :close-on-click-modal="false">
+      <el-alert
+        title="选择多台服务器后，会把同一个本地文件上传到相同远程路径；同名远程文件会被覆盖。"
+        type="info"
+        show-icon
+        :closable="false"
+        class="batch-upload-alert"
+      />
+      <el-form :model="batchUploadForm" label-width="110px" class="batch-upload-form">
+        <el-form-item label="目标服务器">
+          <el-select v-model="batchUploadForm.server_ids" placeholder="选择服务器" filterable multiple collapse-tags collapse-tags-tooltip style="width:100%">
+            <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="远程路径">
+          <el-input v-model="batchUploadForm.path" placeholder="例如：/tmp/app.tar.gz（需包含文件名）" />
+          <div class="hint">需要填写完整文件路径，不只是目录。</div>
+        </el-form-item>
+        <el-form-item label="选择文件">
+          <el-upload
+            ref="batchUploadRef"
+            :auto-upload="false"
+            :limit="1"
+            :on-change="onBatchUploadFileChange"
+            :on-remove="onBatchUploadFileRemove"
+          >
+            <el-button>选择文件</el-button>
+            <template #tip><div class="el-upload__tip">单文件最大 100MB。</div></template>
+          </el-upload>
+        </el-form-item>
+      </el-form>
+      <el-table v-if="batchUploadResults.length" :data="batchUploadResults" size="small" border class="batch-upload-results">
+        <el-table-column prop="server_name" label="服务器" min-width="160" />
+        <el-table-column prop="host" label="主机" min-width="140" />
+        <el-table-column prop="success" label="结果" width="90">
+          <template #default="{ row }"><el-tag :type="row.success ? 'success' : 'danger'">{{ row.success ? '成功' : '失败' }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="message" label="信息" show-overflow-tooltip />
+      </el-table>
+      <template #footer>
+        <el-button @click="showBatchUploadDialog=false">关闭</el-button>
+        <el-button @click="resetBatchUpload">清空</el-button>
+        <el-button type="primary" :loading="batchUploading" @click="batchUploadFiles">开始上传</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="showNewDialog" title="新建" width="420px">
       <el-radio-group v-model="newType"><el-radio value="file">文件</el-radio><el-radio value="dir">文件夹</el-radio></el-radio-group>
       <el-input v-model="newName" placeholder="名称" style="margin-top:12px" />
@@ -100,8 +147,14 @@ const editVisible = ref(false)
 const editPath = ref('')
 const editContent = ref('')
 const showUploadDialog = ref(false)
+const showBatchUploadDialog = ref(false)
 const showNewDialog = ref(false)
 const selectedUploadFile = ref(null)
+const batchUploadRef = ref(null)
+const batchUploading = ref(false)
+const batchUploadFile = ref(null)
+const batchUploadResults = ref([])
+const batchUploadForm = ref({ server_ids: [], path: '' })
 const newType = ref('file')
 const newName = ref('')
 const quickPaths = ['/', '/root', '/home', '/etc', '/etc/nginx', '/var/log', '/tmp', '/usr/local']
@@ -219,6 +272,50 @@ async function uploadSelectedFile() {
   }
 }
 
+function openBatchUpload() {
+  if (serverId.value && !batchUploadForm.value.server_ids.length) batchUploadForm.value.server_ids = [serverId.value]
+  if (!batchUploadForm.value.path) batchUploadForm.value.path = joinPath(directoryPath.value, '')
+  showBatchUploadDialog.value = true
+}
+
+function onBatchUploadFileChange(file) {
+  batchUploadFile.value = file.raw
+  if (file.raw && batchUploadForm.value.path.endsWith('/')) {
+    batchUploadForm.value.path = batchUploadForm.value.path + file.raw.name
+  }
+}
+
+function onBatchUploadFileRemove() { batchUploadFile.value = null }
+
+function resetBatchUpload() {
+  batchUploadForm.value = { server_ids: serverId.value ? [serverId.value] : [], path: joinPath(directoryPath.value, '') }
+  batchUploadFile.value = null
+  batchUploadResults.value = []
+  batchUploadRef.value?.clearFiles()
+}
+
+async function batchUploadFiles() {
+  if (!batchUploadForm.value.server_ids.length) return ElMessage.warning('请至少选择一台服务器')
+  if (!batchUploadForm.value.path || batchUploadForm.value.path.endsWith('/')) return ElMessage.warning('请输入完整远程文件路径，不能只填目录')
+  if (!batchUploadFile.value) return ElMessage.warning('请选择要上传的文件')
+  const formData = new FormData()
+  formData.append('file', batchUploadFile.value)
+  formData.append('path', batchUploadForm.value.path)
+  formData.append('server_ids', JSON.stringify(batchUploadForm.value.server_ids))
+  batchUploading.value = true
+  try {
+    const res = await api.post('/api/files/batch-upload', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    if (res.code === 0) {
+      batchUploadResults.value = res.data?.results || []
+      ElMessage.success(res.message || '批量上传完成')
+    } else {
+      ElMessage.error(res.message || '批量上传失败')
+    }
+  } finally {
+    batchUploading.value = false
+  }
+}
+
 function downloadFile(row) {
   const filepath = row.path || joinPath(currentPath.value, row.name)
   const token = localStorage.getItem('token')
@@ -266,5 +363,8 @@ async function createNew() {
 .edit-path { margin-bottom: 8px; color: #64748b; word-break: break-all; }
 .code-editor :deep(textarea) { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; }
 .hint { margin-top: 10px; color: #909399; font-size: 13px; word-break: break-all; }
+.batch-upload-alert { margin-bottom: 14px; }
+.batch-upload-form { max-width: 660px; }
+.batch-upload-results { margin-top: 12px; }
 @media (max-width: 768px) { .path-box { flex-direction: column; } .path-input { min-width: auto; } }
 </style>

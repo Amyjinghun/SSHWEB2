@@ -142,7 +142,10 @@ CREATE TABLE IF NOT EXISTS `file_logs` (
 CREATE TABLE IF NOT EXISTS `scheduled_tasks` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `name` VARCHAR(150) NOT NULL,
+  `target_type` ENUM('server','server_list','group') NOT NULL DEFAULT 'server',
   `server_id` BIGINT NULL,
+  `server_ids` JSON NULL,
+  `group_id` BIGINT NULL,
   `command` TEXT NOT NULL,
   `cron_expr` VARCHAR(100) NOT NULL,
   `enabled` TINYINT NOT NULL DEFAULT 1,
@@ -152,6 +155,7 @@ CREATE TABLE IF NOT EXISTS `scheduled_tasks` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_server_id` (`server_id`),
+  INDEX `idx_group_id` (`group_id`),
   INDEX `idx_enabled` (`enabled`)
 ) ENGINE=InnoDB;
 

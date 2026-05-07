@@ -388,6 +388,59 @@ async function statusLoop() {
   statusTimer = setTimeout(statusLoop, intervalSeconds * 1000);
 }
 
+
+function parseTaskServerIds(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(Number).filter(Boolean);
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(Number).filter(Boolean) : [];
+  } catch {
+    return String(value).split(',').map(v => Number(v.trim())).filter(Boolean);
+  }
+}
+
+async function getScheduledTaskServers(task) {
+  const type = task.target_type || (task.server_id ? 'server' : 'server_list');
+  if (type === 'group') {
+    if (!task.group_id) return [];
+    return db.query('SELECT * FROM servers WHERE group_id = ? ORDER BY id ASC', [task.group_id]);
+  }
+  if (type === 'server_list') {
+    const ids = parseTaskServerIds(task.server_ids);
+    if (!ids.length) return [];
+    const placeholders = ids.map(() => '?').join(',');
+    return db.query(`SELECT * FROM servers WHERE id IN (${placeholders}) ORDER BY id ASC`, ids);
+  }
+  if (!task.server_id) return [];
+  return db.query('SELECT * FROM servers WHERE id = ?', [task.server_id]);
+}
+
+async function runScheduledCommandTask(task) {
+  const servers = await getScheduledTaskServers(task);
+  if (!servers.length) {
+    console.error(`计划任务没有可执行目标 [${task.name}]`);
+    return { total: 0, success: 0, failed: 0 };
+  }
+
+  let success = 0;
+  let failed = 0;
+  for (const server of servers) {
+    let conn;
+    try {
+      conn = await createSSHConnection(server);
+      const result = await execCommand(conn, task.command);
+      if (result.exitCode === 0) success++; else failed++;
+    } catch (err) {
+      failed++;
+      console.error(`计划任务执行失败 [${task.name}] -> ${server.name || server.host}:`, err.message);
+    } finally {
+      try { if (conn) conn.end(); } catch {}
+    }
+  }
+  return { total: servers.length, success, failed };
+}
+
 function startSchedulers() {
   statusTimer = setTimeout(statusLoop, 10000);
   runningSchedulers.push({ stop: () => clearTimeout(statusTimer) });
@@ -397,32 +450,25 @@ function startSchedulers() {
   const expiryScheduler = cron.schedule('0 9 * * *', checkServerExpiry);
   runningSchedulers.push(expiryScheduler);
 
-  // 计划任务执行器 - 每分钟检查
+  // 计划任务执行器 - 每分钟检查，支持单台、多台和分组目标
   const taskScheduler = cron.schedule('* * * * *', async () => {
     try {
-      const tasks = await db.query(`SELECT st.id AS task_id, st.name AS task_name, st.command, st.cron_expr, st.last_run_at, st.server_id,
-        s.id, s.name, s.host, s.port, s.username, s.auth_type, s.password_encrypted, s.private_key_encrypted, s.private_key_passphrase_encrypted
-        FROM scheduled_tasks st LEFT JOIN servers s ON st.server_id = s.id WHERE st.enabled = 1`);
+      const tasks = await db.query(`SELECT id, name, target_type, server_id, server_ids, group_id, command, cron_expr, last_run_at
+        FROM scheduled_tasks WHERE enabled = 1`);
       const now = new Date();
       for (const task of tasks) {
-        if (!task.server_id) continue;
         try {
           if (!shouldRunCronNow(task.cron_expr, now, task.last_run_at)) continue;
           if (isDangerousCommand(task.command)) {
-            console.error(`计划任务被安全策略拦截 [${task.task_name}]`);
+            console.error(`计划任务被安全策略拦截 [${task.name}]`);
             continue;
           }
 
-          let conn;
-          try {
-            conn = await createSSHConnection(task);
-            await execCommand(conn, task.command);
-            await db.update('UPDATE scheduled_tasks SET last_run_at = NOW() WHERE id = ?', [task.task_id]);
-          } finally {
-            try { if (conn) conn.end(); } catch {}
-          }
+          const result = await runScheduledCommandTask(task);
+          await db.update('UPDATE scheduled_tasks SET last_run_at = NOW() WHERE id = ?', [task.id]);
+          console.log(`计划任务执行完成 [${task.name}]：总数 ${result.total}，成功 ${result.success}，失败 ${result.failed}`);
         } catch (err) {
-          console.error(`计划任务执行失败 [${task.task_name}]:`, err.message);
+          console.error(`计划任务执行失败 [${task.name}]:`, err.message);
         }
       }
     } catch (err) {

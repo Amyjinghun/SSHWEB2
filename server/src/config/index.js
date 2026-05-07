@@ -12,7 +12,7 @@ if (env === 'production') {
 
 module.exports = {
   appName: process.env.APP_NAME || 'SSHWeb',
-  port: parseInt(process.env.APP_PORT) || 3000,
+  port: parseInt(process.env.APP_PORT) || 18080,
   env,
   jwtSecret: process.env.JWT_SECRET || 'sshweb_jwt_secret_key',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',

@@ -6,14 +6,16 @@ services:
     container_name: sshweb-app
     restart: always
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-18080}:18080"
+    env_file:
+      - .env.docker
     environment:
       - NODE_ENV=production
       - MYSQL_HOST=db
       - MYSQL_PORT=3306
-      - MYSQL_DATABASE=sshweb
-      - MYSQL_USER=sshweb
-      - MYSQL_PASSWORD=sshweb123456
+      - MYSQL_DATABASE=${DB_NAME:-sshweb}
+      - MYSQL_USER=${DB_USER:-sshweb}
+      - MYSQL_PASSWORD=${DB_PASS:-sshweb123456}
       - JWT_SECRET=${JWT_SECRET:-please_change_this_secret_key}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-please_change_this_encryption_key}
       - SSH_CONNECT_TIMEOUT=10000
@@ -32,10 +34,10 @@ services:
     container_name: sshweb-db
     restart: always
     environment:
-      - MYSQL_ROOT_PASSWORD=rootpassword
-      - MYSQL_DATABASE=sshweb
-      - MYSQL_USER=sshweb
-      - MYSQL_PASSWORD=sshweb123456
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS:-rootpassword}
+      - MYSQL_DATABASE=${DB_NAME:-sshweb}
+      - MYSQL_USER=${DB_USER:-sshweb}
+      - MYSQL_PASSWORD=${DB_PASS:-sshweb123456}
     volumes:
       - sshweb-db-data:/var/lib/mysql
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
@@ -48,7 +50,7 @@ services:
     networks:
       - sshweb-net
     ports:
-      - "3307:3306"
+      - "${DB_EXPOSE_PORT:-3307}:3306"
 
 networks:
   sshweb-net:

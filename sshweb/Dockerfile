@@ -35,7 +35,7 @@ RUN mkdir -p /var/log/sshweb
 
 # 生成默认 .env
 RUN echo "APP_NAME=SSHWeb\n\
-APP_PORT=3000\n\
+APP_PORT=18080\n\
 NODE_ENV=production\n\
 MYSQL_HOST=db\n\
 MYSQL_PORT=3306\n\
@@ -49,7 +49,7 @@ SSH_CONNECT_TIMEOUT=10000\n\
 SSH_EXEC_TIMEOUT=60000\n\
 ENABLE_DANGEROUS_COMMAND_BLOCK=true" > /app/server/.env
 
-EXPOSE 3000
+EXPOSE 18080
 
 WORKDIR /app/server
 

@@ -3,13 +3,20 @@ const config = require('../config');
 
 const pool = mysql.createPool(config.mysql);
 
-async function ensureSchema() {
+async function ignoreDuplicateColumn(sql) {
   try {
-    await pool.execute('ALTER TABLE users ADD COLUMN token_version INT NOT NULL DEFAULT 0 AFTER status');
+    await pool.execute(sql);
   } catch (err) {
     // ER_DUP_FIELDNAME: column already exists. ER_NO_SUCH_TABLE may happen before initial schema import.
     if (err.code !== 'ER_DUP_FIELDNAME' && err.code !== 'ER_NO_SUCH_TABLE') throw err;
   }
+}
+
+async function ensureSchema() {
+  await ignoreDuplicateColumn('ALTER TABLE users ADD COLUMN token_version INT NOT NULL DEFAULT 0 AFTER status');
+  await ignoreDuplicateColumn("ALTER TABLE scheduled_tasks ADD COLUMN target_type ENUM('server','server_list','group') NOT NULL DEFAULT 'server' AFTER name");
+  await ignoreDuplicateColumn('ALTER TABLE scheduled_tasks ADD COLUMN server_ids JSON NULL AFTER server_id');
+  await ignoreDuplicateColumn('ALTER TABLE scheduled_tasks ADD COLUMN group_id BIGINT NULL AFTER server_ids');
 }
 
 async function query(sql, params) {

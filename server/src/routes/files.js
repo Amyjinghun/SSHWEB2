@@ -219,6 +219,56 @@ router.post('/write', async (req, res) => {
   }
 });
 
+
+router.post('/batch-upload', upload.single('file'), async (req, res) => {
+  try {
+    const { path, group_id } = req.body;
+    const serverIds = (() => {
+      if (!req.body.server_ids) return [];
+      if (Array.isArray(req.body.server_ids)) return req.body.server_ids.map(Number).filter(Boolean);
+      try {
+        const parsed = JSON.parse(req.body.server_ids);
+        return Array.isArray(parsed) ? parsed.map(Number).filter(Boolean) : [];
+      } catch {
+        return String(req.body.server_ids).split(',').map(v => Number(v.trim())).filter(Boolean);
+      }
+    })();
+    if (!path || !req.file) return res.json({ code: 400, message: '请选择文件并填写远程路径' });
+
+    let servers = [];
+    if (serverIds.length) {
+      const placeholders = serverIds.map(() => '?').join(',');
+      servers = await db.query(`SELECT * FROM servers WHERE id IN (${placeholders}) ORDER BY id ASC`, serverIds);
+    } else if (group_id) {
+      servers = await db.query('SELECT * FROM servers WHERE group_id = ? ORDER BY id ASC', [group_id]);
+    }
+    if (!servers.length) return res.json({ code: 400, message: '未找到目标服务器' });
+
+    const remotePath = normalizeRemotePath(path);
+    const results = [];
+    for (const server of servers) {
+      try {
+        await withSftp(server.id, async ({ sftp }) => {
+          await new Promise((resolve, reject) => {
+            const stream = sftp.createWriteStream(remotePath);
+            stream.on('close', resolve);
+            stream.on('error', reject);
+            stream.end(req.file.buffer);
+          });
+        });
+        await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'batch_upload_file', serverId: server.id, detail: { path: remotePath, size: req.file.size } });
+        results.push({ server_id: server.id, server_name: server.name, host: server.host, success: true, message: '上传成功' });
+      } catch (err) {
+        results.push({ server_id: server.id, server_name: server.name, host: server.host, success: false, message: err.code === 3 ? '权限不足，当前 SSH 用户无法上传到该路径' : err.message });
+      }
+    }
+    const success = results.filter(r => r.success).length;
+    res.json({ code: 0, message: '批量上传完成', data: { total: results.length, success, failed: results.length - success, results } });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
     const { server_id, path } = req.body;
