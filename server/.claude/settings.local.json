@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(where python *)",
+      "Bash(py -3 -c \"print\\('hello'\\)\")",
+      "Bash(python -c \"print\\('hello'\\)\")",
+      "Bash(pip install *)",
+      "Bash(python -c \"print\\('ok'\\)\")",
+      "Bash(pip3 install *)",
+      "Bash(python3 -c \"print\\('ok'\\)\")",
+      "Bash(npm list *)",
+      "Bash(npm install *)",
+      "Bash(node -e ' *)"
+    ]
+  }
+}
