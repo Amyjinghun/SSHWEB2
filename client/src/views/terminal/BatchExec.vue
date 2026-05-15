@@ -3,25 +3,28 @@
     <el-row :gutter="16">
       <el-col :span="10">
         <el-card shadow="hover">
-          <template #header><span style="font-weight:600">选择目标服务器</span></template>
+          <template #header><span class="card-title">选择目标服务器</span></template>
           <div style="margin-bottom:12px">
             <el-select v-model="groupId" placeholder="按分组选择" clearable @change="selectByGroup" style="width:100%">
               <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
             </el-select>
           </div>
           <el-checkbox-group v-model="selectedServers">
-            <div v-for="s in servers" :key="s.id" style="margin-bottom:4px">
-              <el-checkbox :value="s.id">{{ s.name }} ({{ s.host }})</el-checkbox>
+            <div v-for="s in servers" :key="s.id" class="server-check-item">
+              <el-checkbox :value="s.id">
+                <span class="server-name">{{ s.name }}</span>
+                <span class="server-host">{{ s.host }}</span>
+              </el-checkbox>
             </div>
           </el-checkbox-group>
-          <div style="margin-top:12px;color:#909399">已选 {{ selectedServers.length }} 台服务器</div>
+          <div class="select-count">已选 <strong>{{ selectedServers.length }}</strong> 台服务器</div>
         </el-card>
       </el-col>
       <el-col :span="14">
         <el-card shadow="hover">
-          <template #header><span style="font-weight:600">执行命令</span></template>
+          <template #header><span class="card-title">执行命令</span></template>
           <el-input v-model="command" type="textarea" :rows="4" placeholder="输入要执行的命令" />
-          <div style="margin-top:12px;display:flex;gap:12px">
+          <div class="exec-actions">
             <el-button type="primary" @click="execute" :loading="executing" :disabled="!selectedServers.length || !command">批量执行</el-button>
             <el-select v-model="templateId" placeholder="使用模板" clearable style="width:200px" @change="useTemplate">
               <el-option v-for="t in templates" :key="t.id" :label="t.name" :value="t.id" />
@@ -29,12 +32,12 @@
           </div>
         </el-card>
         <el-card shadow="hover" style="margin-top:16px" v-if="results.length">
-          <template #header><span style="font-weight:600">执行结果</span></template>
+          <template #header><span class="card-title">执行结果</span></template>
           <el-collapse>
             <el-collapse-item v-for="r in results" :key="r.server_id" :name="r.server_id">
               <template #title>
                 <span>{{ r.server_name }}</span>
-                <el-tag :type="r.status==='success'?'success':'danger'" size="small" style="margin-left:12px">{{ r.status }}</el-tag>
+                <el-tag :type="r.status==='success'?'success':'danger'" size="small" effect="plain" style="margin-left:12px">{{ r.status }}</el-tag>
               </template>
               <pre class="output-box">{{ r.stdout || r.error_message || r.stderr }}</pre>
             </el-collapse-item>
@@ -105,5 +108,14 @@ async function pollResults(taskId) {
 </script>
 
 <style scoped>
-.output-box { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; max-height: 300px; overflow: auto; font-size: 13px; white-space: pre-wrap; }
+.card-title { font-weight: 600; color: #1e293b; font-size: 15px; }
+.server-check-item {
+  padding: 4px 0;
+  border-bottom: 1px solid #f4f6fb;
+  &:last-child { border-bottom: none; }
+}
+.server-name { font-weight: 500; color: #1e293b; }
+.server-host { color: #94a3b8; font-size: 13px; margin-left: 8px; }
+.select-count { margin-top: 12px; color: #64748b; font-size: 13px; }
+.exec-actions { margin-top: 12px; display: flex; gap: 12px; }
 </style>

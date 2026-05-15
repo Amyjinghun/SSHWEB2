@@ -2,24 +2,28 @@
   <div class="page-container">
     <el-card shadow="hover">
       <div class="toolbar">
-        <el-select v-model="currentServerId" placeholder="选择服务器" style="width:300px" filterable>
+        <el-select v-model="currentServerId" placeholder="选择服务器" style="width:300px" filterable size="large">
+          <template #prefix><el-icon><Monitor /></el-icon></template>
           <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
         </el-select>
-        <div>
-          <el-button type="primary" @click="addTerminal">打开终端</el-button>
-          <el-button type="danger" @click="closeAll">关闭全部</el-button>
+        <div class="toolbar-actions">
+          <el-button type="primary" @click="addTerminal"><el-icon><Plus /></el-icon>打开终端</el-button>
+          <el-button type="danger" @click="closeAll"><el-icon><Close /></el-icon>关闭全部</el-button>
         </div>
       </div>
     </el-card>
 
     <div class="terminals-container">
-      <el-tabs v-model="activeTab" type="card" closable @tab-remove="closeTerminal" v-if="terminals.length">
+      <el-tabs v-model="activeTab" type="card" closable @tab-remove="closeTerminal" v-if="terminals.length" class="terminal-tabs">
         <el-tab-pane v-for="t in terminals" :key="t.id" :label="t.name" :name="t.id">
           <div :ref="el => setTermRef(t.id, el)" class="terminal-box"></div>
-          <div v-if="t.error" class="term-error">{{ t.error }}</div>
+          <div v-if="t.error" class="term-error"><el-icon><WarningFilled /></el-icon> {{ t.error }}</div>
         </el-tab-pane>
       </el-tabs>
-      <el-empty v-else description="请选择服务器并点击「打开终端」" />
+      <div v-else class="empty-state">
+        <el-icon :size="48" color="#cbd5e1"><Monitor /></el-icon>
+        <p>请选择服务器并点击「打开终端」</p>
+      </div>
     </div>
   </div>
 </template>
@@ -72,8 +76,9 @@ function initTerminal(term) {
   if (!el) return
 
   const terminal = new Terminal({
-    theme: { background: '#1e1e1e', foreground: '#d4d4d4', cursor: '#409EFF' },
+    theme: { background: '#0f172a', foreground: '#e2e8f0', cursor: '#4f6ef7', selectionBackground: 'rgba(79,110,247,0.3)', black: '#1e293b', green: '#22c55e', red: '#ef4444', yellow: '#f59e0b', blue: '#4f6ef7', cyan: '#06b6d4', white: '#e2e8f0' },
     fontSize: 14,
+    fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
     cursorBlink: true,
     convertEol: true
   })
@@ -148,7 +153,28 @@ function closeAll() {
 
 <style scoped>
 .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.toolbar-actions { display: flex; gap: 10px; }
 .terminals-container { margin-top: 16px; }
-.terminal-box { height: calc(100vh - 260px); background: #1e1e1e; border-radius: 8px; overflow: hidden; padding: 4px; }
-.term-error { color: #F56C6C; padding: 8px; }
+.terminal-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
+.terminal-box {
+  height: calc(100vh - 260px);
+  background: #0f172a;
+  border-radius: 10px;
+  overflow: hidden;
+  padding: 8px;
+  border: 1px solid #1e293b;
+}
+.term-error { color: #ef4444; padding: 10px 12px; background: rgba(239,68,68,0.06); border-radius: 6px; margin-top: 8px; display: flex; align-items: center; gap: 6px; }
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: calc(100vh - 260px);
+  color: #94a3b8;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 2px dashed #e2e8f0;
+  p { margin-top: 12px; font-size: 15px; }
+}
 </style>

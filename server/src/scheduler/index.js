@@ -275,12 +275,19 @@ async function checkOneServer(server) {
       [metrics.cpu, metrics.memUsage, metrics.diskUsage, metrics.osInfo || null, server.id]
     );
 
+    if (server.status !== 'online') {
+      await db.insert('INSERT INTO server_status_changes (server_id, old_status, new_status) VALUES (?, ?, ?)', [server.id, server.status || 'unknown', 'online']);
+    }
+
     await checkMetricAlerts(server, metrics);
     await db.remove('DELETE FROM server_metrics WHERE server_id=? AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)', [server.id]);
 
     return { ok: true, metrics };
   } catch (err) {
     await db.update("UPDATE servers SET status='offline' WHERE id=?", [server.id]);
+    if (server.status !== 'offline') {
+      await db.insert('INSERT INTO server_status_changes (server_id, old_status, new_status) VALUES (?, ?, ?)', [server.id, server.status || 'unknown', 'offline']);
+    }
     const enableOffline = await getAlertBoolean('alert_enable_offline', config.alerts.enableOfflineAlert);
     if (enableOffline) {
       await createAndNotifyAlert({
@@ -384,7 +391,7 @@ async function checkServerExpiry() {
 
 async function statusLoop() {
   await checkAllServers();
-  const intervalSeconds = clamp(await getAlertNumber('server_check_interval', 180), 60, 3600);
+  const intervalSeconds = clamp(await getAlertNumber('server_check_interval', 120), 60, 3600);
   statusTimer = setTimeout(statusLoop, intervalSeconds * 1000);
 }
 

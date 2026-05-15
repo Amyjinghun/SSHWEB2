@@ -6,6 +6,8 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const config = require('./config');
 const { setupSSHTerminal } = require('./websocket/ssh');
+const { setupLogTail } = require('./websocket/log-tail');
+const { setupRealtimeMetrics } = require('./websocket/realtime-metrics');
 const { startSchedulers } = require('./scheduler');
 const db = require('./db');
 
@@ -54,6 +56,8 @@ app.get('*', (req, res) => {
 
 // WebSocket SSH 终端
 setupSSHTerminal(io);
+setupLogTail(io);
+setupRealtimeMetrics(io);
 
 async function bootstrap() {
   await db.ensureSchema();

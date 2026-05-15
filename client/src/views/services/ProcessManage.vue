@@ -3,16 +3,27 @@
     <el-card shadow="hover">
       <div class="toolbar">
         <el-select v-model="serverId" placeholder="选择服务器" filterable style="width:300px" @change="loadData">
+          <template #prefix><el-icon><Monitor /></el-icon></template>
           <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
         </el-select>
-        <el-input v-model="search" placeholder="搜索进程" style="width:200px" clearable />
+        <el-input v-model="search" placeholder="搜索进程" style="width:200px" clearable>
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
         <el-button @click="loadData"><el-icon><Refresh /></el-icon>刷新</el-button>
       </div>
       <el-table :data="filtered" stripe v-loading="loading" max-height="600">
         <el-table-column prop="pid" label="PID" width="80" />
         <el-table-column prop="user" label="用户" width="80" />
-        <el-table-column prop="cpu" label="CPU%" width="80" />
-        <el-table-column prop="mem" label="内存%" width="80" />
+        <el-table-column prop="cpu" label="CPU%" width="80">
+          <template #default="{ row }">
+            <span :class="parseFloat(row.cpu) > 80 ? 'usage-high' : 'usage-normal'">{{ row.cpu }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="mem" label="内存%" width="80">
+          <template #default="{ row }">
+            <span :class="parseFloat(row.mem) > 80 ? 'usage-high' : 'usage-normal'">{{ row.mem }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="command" label="命令" show-overflow-tooltip />
         <el-table-column label="操作" width="150">
           <template #default="{ row }">
@@ -43,4 +54,6 @@ async function forceKill(pid) { await ElMessageBox.confirm(`强制结束进程 $
 
 <style scoped>
 .toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
+.usage-high { color: #ef4444; font-weight: 600; }
+.usage-normal { color: #1e293b; }
 </style>

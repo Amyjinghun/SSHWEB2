@@ -1,7 +1,7 @@
 <template>
   <div class="page-container">
     <el-card shadow="hover">
-      <template #header><span style="font-weight:600">系统设置</span></template>
+      <template #header><span class="card-title">系统设置</span></template>
       <el-tabs>
         <el-tab-pane label="基础设置">
           <el-form :model="settings" label-width="160px" style="max-width:600px">
@@ -70,3 +70,7 @@ async function doCleanup() {
   if (res.code === 0) ElMessage.success('清理完成')
 }
 </script>
+
+<style scoped>
+.card-title { font-weight: 600; color: #1e293b; font-size: 16px; }
+</style>

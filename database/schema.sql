@@ -291,3 +291,14 @@ CREATE TABLE IF NOT EXISTS `settings` (
   `description` TEXT NULL,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
+-- 服务器状态变更记录表
+CREATE TABLE IF NOT EXISTS `server_status_changes` (
+  `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
+  `server_id` BIGINT NOT NULL,
+  `old_status` ENUM('unknown','online','offline') NOT NULL DEFAULT 'unknown',
+  `new_status` ENUM('unknown','online','offline') NOT NULL DEFAULT 'unknown',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_server_id` (`server_id`),
+  INDEX `idx_created_at` (`created_at`)
+) ENGINE=InnoDB;

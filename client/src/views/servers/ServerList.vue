@@ -52,24 +52,33 @@
         </el-table-column>
         <el-table-column prop="status" label="状态" width="80">
           <template #default="{ row }">
-            <el-tag :type="row.status==='online'?'success':row.status==='offline'?'danger':'info'" size="small" effect="dark">
+            <el-tag :type="row.status==='online'?'success':row.status==='offline'?'danger':'info'" size="small" effect="dark" round>
               {{ row.status==='online'?'在线':row.status==='offline'?'离线':'未知' }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="cpu_usage" label="CPU" width="80">
-          <template #default="{ row }">{{ row.cpu_usage != null ? row.cpu_usage + '%' : '-' }}</template>
+          <template #default="{ row }">
+            <span v-if="row.cpu_usage != null" :class="row.cpu_usage > 90 ? 'usage-high' : row.cpu_usage > 70 ? 'usage-warn' : 'usage-normal'">{{ row.cpu_usage }}%</span>
+            <span v-else class="usage-none">-</span>
+          </template>
         </el-table-column>
         <el-table-column prop="memory_usage" label="内存" width="80">
-          <template #default="{ row }">{{ row.memory_usage != null ? row.memory_usage + '%' : '-' }}</template>
+          <template #default="{ row }">
+            <span v-if="row.memory_usage != null" :class="row.memory_usage > 90 ? 'usage-high' : row.memory_usage > 70 ? 'usage-warn' : 'usage-normal'">{{ row.memory_usage }}%</span>
+            <span v-else class="usage-none">-</span>
+          </template>
         </el-table-column>
         <el-table-column prop="disk_usage" label="磁盘" width="80">
-          <template #default="{ row }">{{ row.disk_usage != null ? row.disk_usage + '%' : '-' }}</template>
+          <template #default="{ row }">
+            <span v-if="row.disk_usage != null" :class="row.disk_usage > 90 ? 'usage-high' : row.disk_usage > 70 ? 'usage-warn' : 'usage-normal'">{{ row.disk_usage }}%</span>
+            <span v-else class="usage-none">-</span>
+          </template>
         </el-table-column>
         <el-table-column prop="expires_at" label="到期日期" width="120">
           <template #default="{ row }">{{ row.expires_at || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="370" fixed="right">
+        <el-table-column label="操作" width="440" fixed="right">
           <template #default="{ row }">
             <el-button-group>
               <el-button size="small" @click="testConn(row)" :loading="row.testing">测试</el-button>
@@ -77,6 +86,14 @@
               <el-button size="small" type="primary" @click="openTerminal(row)">终端</el-button>
               <el-button size="small" @click="execCmd(row)">执行</el-button>
               <el-button size="small" @click="$router.push('/servers/edit/' + row.id)">编辑</el-button>
+              <el-dropdown size="small" @command="(m) => renewServer(row, m)" trigger="click">
+                <el-button size="small" type="success">已续费<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item v-for="m in 12" :key="m" :command="m">续费 {{ m }} 个月</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-button size="small" type="danger" @click="deleteServer(row)">删除</el-button>
             </el-button-group>
           </template>
@@ -224,6 +241,12 @@ async function deleteServer(row) {
   else ElMessage.error(res.message)
 }
 
+async function renewServer(row, months) {
+  const res = await api.post(`/api/servers/${row.id}/renew`, { months })
+  if (res.code === 0) { ElMessage.success(res.message); loadData() }
+  else ElMessage.error(res.message)
+}
+
 function downloadTemplate() {
   const token = localStorage.getItem('token') || ''
   window.open(`/api/servers/import/template?token=${encodeURIComponent(token)}`, '_blank')
@@ -295,13 +318,18 @@ async function submitImport() {
 .toolbar-left { display: flex; gap: 12px; flex-wrap: wrap; }
 .toolbar-actions { display: flex; gap: 10px; }
 .list-tip { margin-bottom: 14px; }
-.output-box { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; max-height: 300px; overflow: auto; font-size: 13px; white-space: pre-wrap; }
+
+.usage-normal { color: #22c55e; font-weight: 600; font-size: 13px; }
+.usage-warn { color: #f59e0b; font-weight: 600; font-size: 13px; }
+.usage-high { color: #ef4444; font-weight: 700; font-size: 13px; }
+.usage-none { color: #94a3b8; }
+
 .import-alert { margin-bottom: 14px; }
 .import-actions { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
-.file-button { position: relative; display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 14px; border-radius: 4px; border: 1px solid #dcdfe6; color: #606266; cursor: pointer; font-size: 14px; background: #fff; }
-.file-button:hover { color: #409eff; border-color: #c6e2ff; background: #ecf5ff; }
+.file-button { position: relative; display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 14px; border-radius: 6px; border: 1px solid #dcdfe6; color: #606266; cursor: pointer; font-size: 14px; background: #fff; transition: all 0.15s; }
+.file-button:hover { color: #4f6ef7; border-color: #4f6ef7; background: rgba(79, 110, 247, 0.04); }
 .file-button input { display: none; }
-.import-help { margin-top: 10px; color: #909399; line-height: 1.8; font-size: 13px; }
+.import-help { margin-top: 10px; color: #94a3b8; line-height: 1.8; font-size: 13px; }
 .import-result { margin-top: 8px; }
 @media (max-width: 768px) {
   .toolbar { align-items: flex-start; flex-direction: column; }

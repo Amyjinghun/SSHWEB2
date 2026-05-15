@@ -2,7 +2,7 @@
   <div class="page-container">
     <el-card shadow="hover">
       <div class="toolbar">
-        <span style="font-weight:600;font-size:16px">配置文件备份</span>
+        <span class="page-title">配置文件备份</span>
         <el-button type="primary" @click="showDialog(null)"><el-icon><Plus /></el-icon>新增任务</el-button>
       </div>
       <el-table :data="tasks" stripe>
@@ -58,4 +58,5 @@ async function loadData() { const r = await api.get('/api/backups/config/tasks')
 
 <style scoped>
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.page-title { font-weight: 600; font-size: 16px; color: #1e293b; }
 </style>

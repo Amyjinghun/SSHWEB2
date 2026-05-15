@@ -2,7 +2,7 @@
   <div class="page-container">
     <el-card shadow="hover">
       <div class="toolbar">
-        <span style="font-weight:600;font-size:16px">用户管理</span>
+        <span class="page-title">用户管理</span>
         <el-button type="primary" @click="showDialog(null)"><el-icon><Plus /></el-icon>新增用户</el-button>
       </div>
       <el-table :data="users" stripe>
@@ -10,11 +10,11 @@
         <el-table-column prop="username" label="用户名" width="120" />
         <el-table-column prop="role" label="角色" width="120">
           <template #default="{ row }">
-            <el-tag :type="row.role==='superadmin'?'danger':'primary'" size="small">{{ row.role === 'superadmin' ? '超级管理员' : '管理员' }}</el-tag>
+            <el-tag :type="row.role==='superadmin'?'danger':'primary'" size="small" effect="plain">{{ row.role === 'superadmin' ? '超级管理员' : '管理员' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="80">
-          <template #default="{ row }"><el-tag :type="row.status?'success':'danger'" size="small">{{ row.status ? '启用' : '禁用' }}</el-tag></template>
+          <template #default="{ row }"><el-tag :type="row.status?'success':'danger'" size="small" effect="plain">{{ row.status ? '启用' : '禁用' }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="last_login_at" label="最后登录" width="170" />
         <el-table-column prop="created_at" label="创建时间" width="170" />
@@ -67,4 +67,5 @@ async function del(row) { await ElMessageBox.confirm('确定删除？', '确认'
 
 <style scoped>
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.page-title { font-weight: 600; font-size: 16px; color: #1e293b; }
 </style>

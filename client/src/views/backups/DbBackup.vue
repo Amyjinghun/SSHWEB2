@@ -2,13 +2,15 @@
   <div class="page-container">
     <el-card shadow="hover">
       <div class="toolbar">
-        <span style="font-weight:600;font-size:16px">数据库备份</span>
+        <span class="page-title">数据库备份</span>
         <el-button type="primary" @click="showConfigDialog(null)"><el-icon><Plus /></el-icon>新增配置</el-button>
       </div>
       <el-table :data="configs" stripe>
         <el-table-column prop="name" label="配置名称" width="160" />
         <el-table-column prop="server_name" label="服务器" width="140" />
-        <el-table-column prop="db_type" label="类型" width="80" />
+        <el-table-column prop="db_type" label="类型" width="80">
+          <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.db_type }}</el-tag></template>
+        </el-table-column>
         <el-table-column prop="db_host" label="主机" width="120" />
         <el-table-column prop="db_name" label="数据库" width="120" />
         <el-table-column prop="backup_dir" label="备份目录" show-overflow-tooltip />
@@ -24,14 +26,14 @@
     </el-card>
 
     <el-card shadow="hover" style="margin-top:16px">
-      <template #header><span style="font-weight:600">备份文件</span></template>
+      <template #header><span class="card-title">备份文件</span></template>
       <el-table :data="files" stripe>
         <el-table-column prop="file_name" label="文件名" />
         <el-table-column prop="file_size" label="大小" width="100">
           <template #default="{ row }">{{ row.file_size ? (row.file_size / 1024 / 1024).toFixed(2) + ' MB' : '-' }}</template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="80">
-          <template #default="{ row }"><el-tag :type="row.status==='success'?'success':'danger'" size="small">{{ row.status }}</el-tag></template>
+          <template #default="{ row }"><el-tag :type="row.status==='success'?'success':'danger'" size="small" effect="plain">{{ row.status }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="created_at" label="时间" width="170" />
       </el-table>
@@ -93,4 +95,6 @@ async function loadFiles() { const r = await api.get('/api/backups/files', { par
 
 <style scoped>
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.page-title { font-weight: 600; font-size: 16px; color: #1e293b; }
+.card-title { font-weight: 600; color: #1e293b; font-size: 15px; }
 </style>

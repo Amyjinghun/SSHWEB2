@@ -3,14 +3,19 @@
     <el-card shadow="hover">
       <div class="toolbar">
         <el-select v-model="serverId" placeholder="选择服务器" filterable style="width:300px" @change="loadServices">
+          <template #prefix><el-icon><Monitor /></el-icon></template>
           <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
         </el-select>
-        <el-input v-model="searchName" placeholder="搜索服务名" style="width:200px" clearable />
+        <el-input v-model="searchName" placeholder="搜索服务名" style="width:200px" clearable>
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
       </div>
       <el-table :data="filteredServices" stripe v-loading="loading" max-height="600">
         <el-table-column prop="name" label="服务名称" width="280" show-overflow-tooltip />
         <el-table-column prop="active" label="运行状态" width="100">
-          <template #default="{ row }"><el-tag :type="row.active==='active'?'success':'info'" size="small">{{ row.active }}</el-tag></template>
+          <template #default="{ row }">
+            <el-tag :type="row.active==='active'?'success':'info'" size="small" effect="plain">{{ row.active }}</el-tag>
+          </template>
         </el-table-column>
         <el-table-column prop="sub" label="子状态" width="100" />
         <el-table-column prop="description" label="描述" show-overflow-tooltip />
@@ -63,5 +68,4 @@ async function viewLog(row) {
 
 <style scoped>
 .toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
-.output-box { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; max-height: 500px; overflow: auto; font-size: 13px; white-space: pre-wrap; }
 </style>

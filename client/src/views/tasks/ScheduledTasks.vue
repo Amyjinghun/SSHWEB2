@@ -3,7 +3,7 @@
     <el-card shadow="hover">
       <div class="toolbar">
         <div>
-          <span style="font-weight:600;font-size:16px">计划任务</span>
+          <span class="page-title">计划任务</span>
           <div class="tips">支持自定义 Cron 时间，并可对单台、多台或整个分组服务器执行命令。</div>
         </div>
         <el-button type="primary" @click="showDialog(null)"><el-icon><Plus /></el-icon>新增任务</el-button>
@@ -13,8 +13,12 @@
         <el-table-column label="执行目标" width="220">
           <template #default="{ row }">{{ targetText(row) }}</template>
         </el-table-column>
-        <el-table-column prop="cron_expr" label="Cron表达式" width="140" />
-        <el-table-column prop="command" label="命令" show-overflow-tooltip />
+        <el-table-column prop="cron_expr" label="Cron表达式" width="140">
+          <template #default="{ row }"><code class="cron-code">{{ row.cron_expr }}</code></template>
+        </el-table-column>
+        <el-table-column prop="command" label="命令" show-overflow-tooltip>
+          <template #default="{ row }"><code class="cmd-code">{{ row.command }}</code></template>
+        </el-table-column>
         <el-table-column prop="enabled" label="状态" width="80">
           <template #default="{ row }"><el-switch v-model="row.enabled" :active-value="1" :inactive-value="0" @change="toggle(row)" /></template>
         </el-table-column>
@@ -170,6 +174,14 @@ async function del(row) { await ElMessageBox.confirm('确定删除？', '确认'
 
 <style scoped>
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.mb-card { margin-bottom: 16px; }
-.tips { color: #909399; font-size: 12px; margin-top: 4px; }
+.page-title { font-weight: 600; font-size: 16px; color: #1e293b; }
+.tips { color: #94a3b8; font-size: 12px; margin-top: 4px; }
+.cron-code, .cmd-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  background: #f4f6fb;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #4f6ef7;
+}
 </style>

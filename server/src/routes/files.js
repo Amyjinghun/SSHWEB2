@@ -220,6 +220,60 @@ router.post('/write', async (req, res) => {
 });
 
 
+router.post('/distribute', async (req, res) => {
+  try {
+    const { source_server_id, source_path, target_servers, target_path } = req.body;
+    if (!source_server_id || !source_path) return res.json({ code: 400, message: '请指定源服务器和源文件路径' });
+    if (!target_servers || !target_servers.length) return res.json({ code: 400, message: '请选择目标服务器' });
+    if (!target_path) return res.json({ code: 400, message: '请填写目标路径' });
+
+    let sourceBuffer;
+    const srcServer = await getServerById(source_server_id);
+    const srcConn = await createSSHConnection(srcServer);
+    try {
+      const sftp = await getSftp(srcConn);
+      sourceBuffer = await new Promise((resolve, reject) => {
+        const chunks = [];
+        const stream = sftp.createReadStream(normalizeRemotePath(source_path));
+        stream.on('data', chunk => chunks.push(chunk));
+        stream.on('error', reject);
+        stream.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+    } finally {
+      srcConn.end();
+    }
+
+    if (!sourceBuffer || !sourceBuffer.length) return res.json({ code: 400, message: '源文件为空或读取失败' });
+
+    const remotePath = normalizeRemotePath(target_path);
+    const placeholders = target_servers.map(() => '?').join(',');
+    const servers = await db.query(`SELECT * FROM servers WHERE id IN (${placeholders})`, target_servers.map(Number));
+    const results = [];
+
+    for (const server of servers) {
+      try {
+        await withSftp(server.id, async ({ sftp }) => {
+          await new Promise((resolve, reject) => {
+            const stream = sftp.createWriteStream(remotePath);
+            stream.on('close', resolve);
+            stream.on('error', reject);
+            stream.end(sourceBuffer);
+          });
+        });
+        await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'distribute_file', serverId: server.id, detail: { source_server_id, source_path, target_path: remotePath, size: sourceBuffer.length } });
+        results.push({ server_id: server.id, server_name: server.name, host: server.host, success: true, message: '分发成功' });
+      } catch (err) {
+        results.push({ server_id: server.id, server_name: server.name, host: server.host, success: false, message: err.message });
+      }
+    }
+
+    const success = results.filter(r => r.success).length;
+    res.json({ code: 0, message: `文件分发完成，成功 ${success} 台，失败 ${results.length - success} 台`, data: { total: results.length, success, failed: results.length - success, results } });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 router.post('/batch-upload', upload.single('file'), async (req, res) => {
   try {
     const { path, group_id } = req.body;

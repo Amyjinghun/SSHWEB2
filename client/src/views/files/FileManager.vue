@@ -3,10 +3,11 @@
     <el-card shadow="hover">
       <div class="toolbar">
         <el-select v-model="serverId" placeholder="选择服务器" filterable style="width: 320px" @change="loadFiles">
+          <template #prefix><el-icon><Monitor /></el-icon></template>
           <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
         </el-select>
         <div class="toolbar-actions">
-          <el-button @click="goUp" :disabled="!currentPath || currentPath === '/'">上级目录</el-button>
+          <el-button @click="goUp" :disabled="!currentPath || currentPath === '/'"><el-icon><Top /></el-icon>上级目录</el-button>
           <el-button type="primary" @click="showUploadDialog = true" :disabled="!serverId"><el-icon><Upload /></el-icon>上传</el-button>
           <el-button type="success" @click="openBatchUpload"><el-icon><Upload /></el-icon>批量上传</el-button>
           <el-button @click="showNewDialog = true" :disabled="!serverId"><el-icon><FolderAdd /></el-icon>新建</el-button>
@@ -18,12 +19,12 @@
           <template #prepend>服务器路径</template>
         </el-input>
         <el-button type="primary" @click="openPath" :disabled="!serverId">打开路径</el-button>
-        <el-button @click="refresh" :disabled="!serverId">刷新</el-button>
+        <el-button @click="refresh" :disabled="!serverId"><el-icon><Refresh /></el-icon>刷新</el-button>
       </div>
 
       <div class="quick-paths">
         <span class="quick-label">快捷路径：</span>
-        <el-button v-for="p in quickPaths" :key="p" size="small" text type="primary" @click="jumpTo(p)">{{ p }}</el-button>
+        <span v-for="p in quickPaths" :key="p" class="quick-link" @click="jumpTo(p)">{{ p }}</span>
       </div>
 
       <el-alert
@@ -39,9 +40,11 @@
         <el-table-column prop="permissions" label="权限" width="120" />
         <el-table-column label="名称" min-width="320">
           <template #default="{ row }">
-            <el-icon v-if="row.isDir" style="color:#E6A23C;margin-right:4px"><Folder /></el-icon>
-            <el-icon v-else style="color:#409EFF;margin-right:4px"><Document /></el-icon>
-            <span style="cursor:pointer" @click="row.isDir ? enterDir(row) : viewFile(row)">{{ row.name }}</span>
+            <span class="file-link" @click="row.isDir ? enterDir(row) : viewFile(row)">
+              <el-icon v-if="row.isDir" class="icon-folder"><Folder /></el-icon>
+              <el-icon v-else class="icon-file"><Document /></el-icon>
+              {{ row.name }}
+            </span>
           </template>
         </el-table-column>
         <el-table-column prop="size" label="大小" width="110">
@@ -82,9 +85,9 @@
         type="info"
         show-icon
         :closable="false"
-        class="batch-upload-alert"
+        style="margin-bottom: 14px"
       />
-      <el-form :model="batchUploadForm" label-width="110px" class="batch-upload-form">
+      <el-form :model="batchUploadForm" label-width="110px" style="max-width:660px">
         <el-form-item label="目标服务器">
           <el-select v-model="batchUploadForm.server_ids" placeholder="选择服务器" filterable multiple collapse-tags collapse-tags-tooltip style="width:100%">
             <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
@@ -107,11 +110,11 @@
           </el-upload>
         </el-form-item>
       </el-form>
-      <el-table v-if="batchUploadResults.length" :data="batchUploadResults" size="small" border class="batch-upload-results">
+      <el-table v-if="batchUploadResults.length" :data="batchUploadResults" size="small" border style="margin-top:12px">
         <el-table-column prop="server_name" label="服务器" min-width="160" />
         <el-table-column prop="host" label="主机" min-width="140" />
         <el-table-column prop="success" label="结果" width="90">
-          <template #default="{ row }"><el-tag :type="row.success ? 'success' : 'danger'">{{ row.success ? '成功' : '失败' }}</el-tag></template>
+          <template #default="{ row }"><el-tag :type="row.success ? 'success' : 'danger'" size="small" effect="plain">{{ row.success ? '成功' : '失败' }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="message" label="信息" show-overflow-tooltip />
       </el-table>
@@ -358,13 +361,16 @@ async function createNew() {
 .toolbar-actions { display: flex; gap: 8px; }
 .path-box { display: flex; gap: 10px; margin-bottom: 10px; }
 .path-input { flex: 1; min-width: 360px; }
-.quick-paths { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: 14px; color: #64748b; }
-.quick-label { font-size: 13px; margin-right: 4px; }
-.edit-path { margin-bottom: 8px; color: #64748b; word-break: break-all; }
+.quick-paths { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; color: #64748b; }
+.quick-label { font-size: 13px; margin-right: 2px; }
+.quick-link { font-size: 13px; color: #64748b; cursor: pointer; transition: color 0.15s; }
+.quick-link:hover { color: #4f6ef7; }
+.edit-path { margin-bottom: 8px; color: #64748b; word-break: break-all; font-size: 13px; }
 .code-editor :deep(textarea) { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; }
-.hint { margin-top: 10px; color: #909399; font-size: 13px; word-break: break-all; }
-.batch-upload-alert { margin-bottom: 14px; }
-.batch-upload-form { max-width: 660px; }
-.batch-upload-results { margin-top: 12px; }
+.hint { margin-top: 10px; color: #94a3b8; font-size: 13px; word-break: break-all; }
+.file-link { cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: color 0.15s; }
+.file-link:hover { color: #4f6ef7; }
+.icon-folder { color: #f59e0b; }
+.icon-file { color: #4f6ef7; }
 @media (max-width: 768px) { .path-box { flex-direction: column; } .path-input { min-width: auto; } }
 </style>

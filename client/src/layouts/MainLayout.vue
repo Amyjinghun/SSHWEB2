@@ -1,11 +1,22 @@
 <template>
   <el-container class="main-layout">
     <el-aside :width="isCollapse ? '64px' : '220px'" class="sidebar dark-sidebar">
-      <div class="logo">
-        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23409EFF'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='white' font-size='18' font-weight='bold'%3ES%3C/text%3E%3C/svg%3E" width="32" height="32" />
-        <span v-show="!isCollapse" class="logo-text">SSHWeb</span>
+      <div class="logo" @click="$router.push('/dashboard')">
+        <svg viewBox="0 0 32 32" width="30" height="30" class="logo-icon">
+          <defs>
+            <linearGradient id="sidebarLogo" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#4f6ef7"/>
+              <stop offset="100%" stop-color="#7b93fa"/>
+            </linearGradient>
+          </defs>
+          <rect width="32" height="32" rx="8" fill="url(#sidebarLogo)"/>
+          <text x="16" y="22" text-anchor="middle" fill="white" font-size="18" font-weight="bold">S</text>
+        </svg>
+        <transition name="fade">
+          <span v-show="!isCollapse" class="logo-text">SSHWeb</span>
+        </transition>
       </div>
-      <el-menu :default-active="$route.path" router :collapse="isCollapse" background-color="#1d1e1f" text-color="#bfcbd9" active-text-color="#409EFF">
+      <el-menu :default-active="$route.path" router :collapse="isCollapse" background-color="#0f172a" text-color="#94a3b8" active-text-color="#fff">
         <el-menu-item index="/dashboard">
           <el-icon><Monitor /></el-icon>
           <template #title>首页</template>
@@ -28,8 +39,16 @@
         <el-sub-menu index="ops">
           <template #title><el-icon><Tools /></el-icon><span>运维管理</span></template>
           <el-menu-item index="/files">文件管理</el-menu-item>
+          <el-menu-item index="/file-distribute">文件分发</el-menu-item>
           <el-menu-item index="/services">服务管理</el-menu-item>
           <el-menu-item index="/processes">进程管理</el-menu-item>
+        </el-sub-menu>
+
+        <el-sub-menu index="monitor">
+          <template #title><el-icon><DataLine /></el-icon><span>监控中心</span></template>
+          <el-menu-item index="/monitor">资源监控</el-menu-item>
+          <el-menu-item index="/log-viewer">实时日志</el-menu-item>
+          <el-menu-item index="/status-changes">状态记录</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="tasks">
@@ -72,20 +91,25 @@
         <div class="header-right">
           <el-dropdown @command="handleCommand">
             <span class="user-info">
-              <el-avatar :size="28" style="background:#409EFF">{{ userStore.userInfo?.username?.[0] || 'A' }}</el-avatar>
-              <span style="margin-left:8px">{{ userStore.userInfo?.username || '管理员' }}</span>
+              <el-avatar :size="32" style="background:linear-gradient(135deg,#4f6ef7,#7b93fa);font-weight:600">{{ userStore.userInfo?.username?.[0] || 'A' }}</el-avatar>
+              <span class="user-name">{{ userStore.userInfo?.username || '管理员' }}</span>
+              <el-icon class="arrow-icon"><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="password">修改密码</el-dropdown-item>
-                <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+                <el-dropdown-item command="password"><el-icon><Lock /></el-icon>修改密码</el-dropdown-item>
+                <el-dropdown-item command="logout" divided><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
         </div>
       </el-header>
       <el-main class="main-content">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <transition name="page-fade" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
       </el-main>
     </el-container>
 
@@ -144,32 +168,84 @@ async function changePassword() {
 <style scoped lang="scss">
 .main-layout { height: 100vh; }
 .sidebar {
-  background: #1d1e1f;
+  background: #0f172a;
   overflow-y: auto;
   overflow-x: hidden;
-  transition: width 0.3s;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-right: 1px solid rgba(255,255,255,0.05);
 }
 .logo {
-  height: 56px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
-  .logo-text { color: #fff; font-size: 18px; font-weight: 700; letter-spacing: 2px; white-space: nowrap; }
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  cursor: pointer;
+  transition: background 0.2s;
+  &:hover { background: rgba(79, 110, 247, 0.08); }
+  .logo-icon { flex-shrink: 0; }
+  .logo-text {
+    color: #fff;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    white-space: nowrap;
+  }
 }
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: #fff;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-  padding: 0 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  padding: 0 24px;
+  height: 56px;
+  border-bottom: 1px solid #f0f2f7;
   .header-left { display: flex; align-items: center; gap: 16px; }
-  .collapse-btn { font-size: 20px; cursor: pointer; color: #666; &:hover { color: #409EFF; } }
+  .collapse-btn {
+    font-size: 20px;
+    cursor: pointer;
+    color: #64748b;
+    padding: 4px;
+    border-radius: 6px;
+    transition: all 0.15s;
+    &:hover { color: #4f6ef7; background: rgba(79, 110, 247, 0.08); }
+  }
   .header-right { display: flex; align-items: center; }
-  .user-info { display: flex; align-items: center; cursor: pointer; }
+  .user-info {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 8px;
+    transition: background 0.15s;
+    &:hover { background: #f4f6fb; }
+  }
+  .user-name {
+    margin-left: 10px;
+    font-weight: 500;
+    color: #1e293b;
+    font-size: 14px;
+  }
+  .arrow-icon { margin-left: 4px; color: #94a3b8; font-size: 12px; }
 }
-.main-content { background: #f0f2f5; overflow-y: auto; }
+
+.main-content {
+  background: #f4f6fb;
+  overflow-y: auto;
+}
+
 .el-menu { border-right: none !important; }
+
+.page-fade-enter-active, .page-fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+.page-fade-enter-from, .page-fade-leave-to {
+  opacity: 0;
+}
 </style>

@@ -1,7 +1,7 @@
 <template>
   <div class="page-container">
     <el-card shadow="hover">
-      <template #header><span style="font-weight:600">{{ isEdit ? '编辑服务器' : '添加服务器' }}</span></template>
+      <template #header><span class="card-title">{{ isEdit ? '编辑服务器' : '添加服务器' }}</span></template>
       <el-form :model="form" label-width="120px" style="max-width:600px">
         <el-form-item label="服务器名称" required><el-input v-model="form.name" placeholder="例如：生产Web-01" /></el-form-item>
         <el-form-item label="主机地址" required><el-input v-model="form.host" placeholder="IP 或域名" /></el-form-item>
@@ -75,3 +75,7 @@ async function save() {
   else ElMessage.error(res.message)
 }
 </script>
+
+<style scoped>
+.card-title { font-weight: 600; color: #1e293b; font-size: 16px; }
+</style>

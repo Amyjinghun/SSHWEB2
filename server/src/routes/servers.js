@@ -440,6 +440,23 @@ router.post('/:id/test', async (req, res) => {
   }
 });
 
+router.post('/:id/renew', async (req, res) => {
+  try {
+    const months = Number(req.body.months);
+    if (!months || months < 1 || months > 12) return res.json({ code: 400, message: '续费月数须为 1-12' });
+    const server = await db.queryOne('SELECT id, name, expires_at FROM servers WHERE id = ?', [req.params.id]);
+    if (!server) return res.json({ code: 404, message: '服务器不存在' });
+    const base = server.expires_at ? new Date(server.expires_at) : new Date();
+    base.setMonth(base.getMonth() + months);
+    const newDate = base.toISOString().slice(0, 10);
+    await db.update('UPDATE servers SET expires_at = ? WHERE id = ?', [newDate, req.params.id]);
+    await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'renew_server', targetType: 'server', targetId: req.params.id, detail: { months, newDate } });
+    res.json({ code: 0, message: `已续费 ${months} 个月，新到期日期：${newDate}`, data: { expires_at: newDate } });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 router.post('/:id/monitor', async (req, res) => {
   try {
     const server = await db.queryOne('SELECT * FROM servers WHERE id = ?', [req.params.id]);
@@ -465,6 +482,21 @@ router.get('/:id/metrics', async (req, res) => {
       [req.params.id, hours]
     );
     res.json({ code: 0, data: metrics });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+router.get('/:id/status-changes', async (req, res) => {
+  try {
+    const { page = 1, page_size = 20 } = req.query;
+    const offset = (Number(page) - 1) * Number(page_size);
+    const list = await db.query(
+      'SELECT * FROM server_status_changes WHERE server_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
+      [req.params.id, Number(page_size), offset]
+    );
+    const total = await db.queryOne('SELECT COUNT(*) as cnt FROM server_status_changes WHERE server_id = ?', [req.params.id]);
+    res.json({ code: 0, data: { list, total: total.cnt } });
   } catch (err) {
     res.json({ code: 500, message: err.message });
   }

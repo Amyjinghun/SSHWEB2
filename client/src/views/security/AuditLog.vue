@@ -2,7 +2,7 @@
   <div class="page-container">
     <el-card shadow="hover">
       <div class="toolbar">
-        <span style="font-weight:600;font-size:16px">审计日志</span>
+        <span class="page-title">审计日志</span>
         <div class="toolbar-left">
           <el-select v-model="filters.action" placeholder="操作类型" clearable @change="loadData">
             <el-option v-for="a in actionTypes" :key="a" :label="a" :value="a" />
@@ -15,14 +15,16 @@
       </div>
       <el-table :data="logs" stripe v-loading="loading">
         <el-table-column prop="username" label="操作人" width="100" />
-        <el-table-column prop="action" label="操作类型" width="140" />
+        <el-table-column prop="action" label="操作类型" width="140">
+          <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.action }}</el-tag></template>
+        </el-table-column>
         <el-table-column prop="server_name" label="服务器" width="140" />
         <el-table-column prop="ip" label="IP" width="130" />
         <el-table-column prop="detail_json" label="详情" show-overflow-tooltip>
           <template #default="{ row }">{{ row.detail_json ? JSON.stringify(row.detail_json) : '-' }}</template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="80">
-          <template #default="{ row }"><el-tag :type="row.status==='success'?'success':'danger'" size="small">{{ row.status }}</el-tag></template>
+          <template #default="{ row }"><el-tag :type="row.status==='success'?'success':'danger'" size="small" effect="plain">{{ row.status }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="created_at" label="时间" width="170" />
       </el-table>
@@ -51,4 +53,5 @@ async function loadData() {
 <style scoped>
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
 .toolbar-left { display: flex; gap: 8px; flex-wrap: wrap; }
+.page-title { font-weight: 600; font-size: 16px; color: #1e293b; }
 </style>

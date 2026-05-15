@@ -2,7 +2,7 @@
   <div class="page-container">
     <el-card shadow="hover">
       <div class="toolbar">
-        <span style="font-weight:600;font-size:16px">SSL证书监控</span>
+        <span class="page-title">SSL证书监控</span>
         <el-button type="primary" @click="showDialog(null)"><el-icon><Plus /></el-icon>添加监控</el-button>
       </div>
       <el-table :data="certs" stripe>
@@ -12,14 +12,14 @@
         <el-table-column prop="valid_to" label="到期时间" width="170" />
         <el-table-column prop="days_left" label="剩余天数" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.days_left <= 0 ? 'danger' : row.days_left <= 7 ? 'danger' : row.days_left <= 30 ? 'warning' : 'success'" size="small">
+            <el-tag :type="row.days_left <= 0 ? 'danger' : row.days_left <= 7 ? 'danger' : row.days_left <= 30 ? 'warning' : 'success'" size="small" effect="plain">
               {{ row.days_left ?? '-' }} 天
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="80">
           <template #default="{ row }">
-            <el-tag :type="row.status==='valid'?'success':row.status==='expired'?'danger':'warning'" size="small">{{ row.status }}</el-tag>
+            <el-tag :type="row.status==='valid'?'success':row.status==='expired'?'danger':'warning'" size="small" effect="plain">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="200">
@@ -61,4 +61,5 @@ async function del(row) { await ElMessageBox.confirm('确定删除？', '确认'
 
 <style scoped>
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.page-title { font-weight: 600; font-size: 16px; color: #1e293b; }
 </style>

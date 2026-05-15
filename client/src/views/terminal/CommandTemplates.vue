@@ -3,17 +3,24 @@
     <el-card shadow="hover">
       <div class="toolbar">
         <div class="toolbar-left">
-          <el-select v-model="categoryFilter" placeholder="分类筛选" clearable><el-option v-for="c in categories" :key="c" :label="c" :value="c" /></el-select>
+          <el-select v-model="categoryFilter" placeholder="分类筛选" clearable>
+            <template #prefix><el-icon><Filter /></el-icon></template>
+            <el-option v-for="c in categories" :key="c" :label="c" :value="c" />
+          </el-select>
         </div>
         <el-button type="primary" @click="showDialog(null)"><el-icon><Plus /></el-icon>新增模板</el-button>
       </div>
       <el-table :data="filteredTemplates" stripe>
         <el-table-column prop="name" label="名称" width="160" />
-        <el-table-column prop="category" label="分类" width="120" />
-        <el-table-column prop="command" label="命令" show-overflow-tooltip />
+        <el-table-column prop="category" label="分类" width="120">
+          <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.category }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="command" label="命令" show-overflow-tooltip>
+          <template #default="{ row }"><code class="cmd-code">{{ row.command }}</code></template>
+        </el-table-column>
         <el-table-column prop="description" label="说明" width="200" show-overflow-tooltip />
         <el-table-column prop="is_dangerous" label="危险" width="60">
-          <template #default="{ row }"><el-tag v-if="row.is_dangerous" type="danger" size="small">是</el-tag></template>
+          <template #default="{ row }"><el-tag v-if="row.is_dangerous" type="danger" size="small" effect="dark">是</el-tag></template>
         </el-table-column>
         <el-table-column label="操作" width="150">
           <template #default="{ row }">
@@ -61,4 +68,12 @@ async function del(row) { await ElMessageBox.confirm('确定删除？', '确认'
 <style scoped>
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .toolbar-left { display: flex; gap: 12px; }
+.cmd-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  background: #f4f6fb;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #4f6ef7;
+}
 </style>

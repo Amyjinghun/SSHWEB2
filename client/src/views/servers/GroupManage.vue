@@ -1,8 +1,8 @@
 <template>
   <div class="page-container">
     <el-card shadow="hover">
-      <div style="display:flex;justify-content:space-between;margin-bottom:16px">
-        <span style="font-weight:600;font-size:16px">分组管理</span>
+      <div class="toolbar">
+        <span class="page-title">分组管理</span>
         <el-button type="primary" @click="showDialog(null)"><el-icon><Plus /></el-icon>新增分组</el-button>
       </div>
       <el-table :data="groups" stripe>
@@ -48,3 +48,8 @@ async function del(row) {
   if (res.code === 0) { ElMessage.success('已删除'); loadData() }
 }
 </script>
+
+<style scoped>
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.page-title { font-weight: 600; font-size: 16px; color: #1e293b; }
+</style>

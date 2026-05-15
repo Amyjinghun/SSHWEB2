@@ -2,13 +2,99 @@ const https = require('https');
 const db = require('../db');
 const config = require('../config');
 
+function progressBar(percent) {
+  const filled = Math.round(percent / 5);
+  return '▓'.repeat(filled) + '░'.repeat(20 - filled);
+}
+
 const DEFAULT_TEMPLATES = {
-  alert_template_offline: '🚨 服务器离线告警\n\n服务器：{{server_name}}\nIP：{{host}}\n端口：{{port}}\n失败原因：{{error}}\n备注：{{remark}}\n时间：{{time}}',
-  alert_template_cpu: '🚨 CPU占用过高\n\n服务器：{{server_name}}\nIP：{{host}}\n当前CPU：{{cpu_usage}}%\n阈值：{{threshold}}%\n系统：{{os_info}}\n备注：{{remark}}\n时间：{{time}}',
-  alert_template_memory: '🚨 内存占用过高\n\n服务器：{{server_name}}\nIP：{{host}}\n当前内存：{{memory_usage}}%\n已用/总量：{{memory_used}}MB / {{memory_total}}MB\n阈值：{{threshold}}%\n系统：{{os_info}}\n备注：{{remark}}\n时间：{{time}}',
-  alert_template_disk: '⚠️ 磁盘占用过高\n\n服务器：{{server_name}}\nIP：{{host}}\n根分区磁盘：{{disk_usage}}%\n已用/总量：{{disk_used}}MB / {{disk_total}}MB\n阈值：{{threshold}}%\n系统：{{os_info}}\n备注：{{remark}}\n时间：{{time}}',
-  alert_template_expiry: '⏰ 服务器即将到期\n\n服务器：{{server_name}}\nIP：{{host}}\n端口：{{port}}\n用户名：{{username}}\n分组：{{group_name}}\n标签：{{tags}}\n到期时间：{{expires_at}}\n剩余天数：{{days_left}} 天\n备注：{{remark}}\n时间：{{time}}',
-  alert_template_expired: '🚨 服务器已到期\n\n服务器：{{server_name}}\nIP：{{host}}\n端口：{{port}}\n用户名：{{username}}\n分组：{{group_name}}\n标签：{{tags}}\n到期时间：{{expires_at}}\n已过期：{{expired_days}} 天\n备注：{{remark}}\n时间：{{time}}'
+  alert_template_offline: `🚨 <b>服务器离线告警</b>
+
+━━━━━━━━━━━━━━━━━━
+🖥 <b>服务器</b>：{{server_name}}
+🌐 <b>IP地址</b>：<code>{{host}}:{{port}}</code>
+❌ <b>失败原因</b>：{{error}}
+📝 <b>备注</b>：{{remark}}
+━━━━━━━━━━━━━━━━━━
+🕐 {{time}}`,
+
+  alert_template_cpu: `🔴 <b>CPU 占用过高告警</b>
+
+━━━━━━━━━━━━━━━━━━
+🖥 <b>服务器</b>：{{server_name}}
+🌐 <b>IP地址</b>：<code>{{host}}</code>
+🖥 <b>系统</b>：{{os_info}}
+━━━━━━━━━━━━━━━━━━
+🔥 <b>CPU 使用率</b>：<code>{{cpu_usage}}%</code>
+<code>{{bar:cpu_usage}}</code>
+⚠️ <b>告警阈值</b>：{{threshold}}%
+📝 <b>备注</b>：{{remark}}
+━━━━━━━━━━━━━━━━━━
+🕐 {{time}}`,
+
+  alert_template_memory: `🟠 <b>内存占用过高告警</b>
+
+━━━━━━━━━━━━━━━━━━
+🖥 <b>服务器</b>：{{server_name}}
+🌐 <b>IP地址</b>：<code>{{host}}</code>
+🖥 <b>系统</b>：{{os_info}}
+━━━━━━━━━━━━━━━━━━
+💾 <b>内存使用率</b>：<code>{{memory_usage}}%</code>  ({{memory_used}} MB / {{memory_total}} MB)
+<code>{{bar:memory_usage}}</code>
+⚠️ <b>告警阈值</b>：{{threshold}}%
+📝 <b>备注</b>：{{remark}}
+━━━━━━━━━━━━━━━━━━
+🕐 {{time}}`,
+
+  alert_template_disk: `🟡 <b>磁盘占用过高告警</b>
+
+━━━━━━━━━━━━━━━━━━
+🖥 <b>服务器</b>：{{server_name}}
+🌐 <b>IP地址</b>：<code>{{host}}</code>
+🖥 <b>系统</b>：{{os_info}}
+━━━━━━━━━━━━━━━━━━
+💿 <b>磁盘使用率</b>：<code>{{disk_usage}}%</code>  ({{disk_used}} MB / {{disk_total}} MB)
+<code>{{bar:disk_usage}}</code>
+⚠️ <b>告警阈值</b>：{{threshold}}%
+📝 <b>备注</b>：{{remark}}
+━━━━━━━━━━━━━━━━━━
+🕐 {{time}}`,
+
+  alert_template_expiry: `⏰ <b>服务器即将到期提醒</b>
+
+┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+🖥 <b>服务器</b>：{{server_name}}
+🌐 <b>IP地址</b>：<code>{{host}}:{{port}}</code>
+👤 <b>用户名</b>：{{username}}
+📂 <b>分组</b>：{{group_name}}
+🏷 <b>标签</b>：{{tags}}
+└ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+
+📅 <b>到期时间</b>：<code>{{expires_at}}</code>
+⏳ <b>剩余天数</b>：🔥 <b>{{days_left}} 天</b>
+📝 <b>备注</b>：{{remark}}
+
+💡 <i>请及时续费，避免服务器业务中断</i>
+━━━━━━━━━━━━━━━━━━
+🕐 {{time}}`,
+
+  alert_template_expired: `🚨 <b>服务器已到期通知</b>
+
+┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+🖥 <b>服务器</b>：{{server_name}}
+🌐 <b>IP地址</b>：<code>{{host}}:{{port}}</code>
+👤 <b>用户名</b>：{{username}}
+📂 <b>分组</b>：{{group_name}}
+🏷 <b>标签</b>：{{tags}}
+└ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+
+📅 <b>到期时间</b>：<code>{{expires_at}}</code>
+⏳ <b>已过期</b>：❌ <b>{{expired_days}} 天</b>
+📝 <b>备注</b>：{{remark}}
+
+⚠️ <i>该服务器已过期，相关业务可能已受影响，请尽快处理！</i>
+━━━━━━━━━━━━━━━━━━
+🕐 {{time}}`
 };
 
 async function getSettings() {
@@ -124,8 +210,8 @@ function escapeHtml(str) {
 
 function normalizeTemplateValue(value) {
   if (value === null || value === undefined || value === '') return '-';
-  if (Array.isArray(value)) return value.length ? value.join(', ') : '-';
-  return String(value);
+  if (Array.isArray(value)) return value.length ? escapeHtml(value.join(', ')) : '-';
+  return escapeHtml(String(value));
 }
 
 function renderTemplate(template, variables = {}) {
@@ -133,14 +219,19 @@ function renderTemplate(template, variables = {}) {
     time: new Date().toLocaleString('zh-CN', { hour12: false }),
     ...variables
   };
-  return String(template || '').replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_, key) => normalizeTemplateValue(data[key]));
+  let text = String(template || '').replace(/{{\s*bar:([a-zA-Z0-9_]+)\s*}}/g, (_, key) => {
+    const val = parseFloat(data[key]);
+    return Number.isFinite(val) ? progressBar(val) : progressBar(0);
+  });
+  text = text.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_, key) => normalizeTemplateValue(data[key]));
+  return text;
 }
 
 async function buildAlertText({ title, content, templateKey, variables }) {
   if (templateKey) {
     const saved = await getSettingValue(templateKey, '');
     const template = saved && String(saved).trim() ? saved : DEFAULT_TEMPLATES[templateKey];
-    if (template) return escapeHtml(renderTemplate(template, variables));
+    if (template) return renderTemplate(template, variables);
   }
   return `🚨 <b>${escapeHtml(title)}</b>\n\n${escapeHtml(content)}\n\n时间：${new Date().toLocaleString('zh-CN', { hour12: false })}`;
 }

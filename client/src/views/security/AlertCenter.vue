@@ -3,12 +3,16 @@
     <el-row :gutter="16">
       <el-col :span="8">
         <el-card shadow="hover">
-          <template #header><span style="font-weight:600">告警规则</span></template>
-          <div style="margin-bottom:12px"><el-button type="primary" size="small" @click="showRuleDialog(null)"><el-icon><Plus /></el-icon>新增规则</el-button></div>
+          <template #header>
+            <div class="card-header-row">
+              <span class="card-title">告警规则</span>
+              <el-button type="primary" size="small" @click="showRuleDialog(null)"><el-icon><Plus /></el-icon>新增</el-button>
+            </div>
+          </template>
           <div v-for="rule in rules" :key="rule.id" class="rule-item">
             <div class="rule-info">
               <strong>{{ rule.name }}</strong>
-              <el-tag :type="rule.level==='critical'?'danger':rule.level==='warning'?'warning':'info'" size="small">{{ rule.level }}</el-tag>
+              <el-tag :type="rule.level==='critical'?'danger':rule.level==='warning'?'warning':'info'" size="small" effect="plain">{{ rule.level }}</el-tag>
             </div>
             <div class="rule-actions">
               <el-switch v-model="rule.enabled" :active-value="1" :inactive-value="0" size="small" @change="toggleRule(rule)" />
@@ -16,19 +20,20 @@
               <el-button size="small" text type="danger" @click="delRule(rule)">删除</el-button>
             </div>
           </div>
+          <el-empty v-if="!rules.length" description="暂无规则" :image-size="60" />
         </el-card>
       </el-col>
       <el-col :span="16">
         <el-card shadow="hover">
-          <template #header><span style="font-weight:600">告警记录</span></template>
+          <template #header><span class="card-title">告警记录</span></template>
           <el-table :data="alerts" stripe>
             <el-table-column prop="server_name" label="服务器" width="140" />
             <el-table-column prop="title" label="告警标题" show-overflow-tooltip />
             <el-table-column prop="level" label="级别" width="80">
-              <template #default="{ row }"><el-tag :type="row.level==='critical'?'danger':row.level==='warning'?'warning':'info'" size="small">{{ row.level }}</el-tag></template>
+              <template #default="{ row }"><el-tag :type="row.level==='critical'?'danger':row.level==='warning'?'warning':'info'" size="small" effect="plain">{{ row.level }}</el-tag></template>
             </el-table-column>
             <el-table-column prop="status" label="状态" width="80">
-              <template #default="{ row }"><el-tag :type="row.status==='active'?'danger':row.status==='recovered'?'success':'info'" size="small">{{ row.status }}</el-tag></template>
+              <template #default="{ row }"><el-tag :type="row.status==='active'?'danger':row.status==='recovered'?'success':'info'" size="small" effect="plain">{{ row.status }}</el-tag></template>
             </el-table-column>
             <el-table-column prop="created_at" label="时间" width="170" />
             <el-table-column label="操作" width="80">
@@ -83,7 +88,9 @@ async function loadAlerts() { const r = await api.get('/api/alerts/logs'); if (r
 </script>
 
 <style scoped>
-.rule-item { padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.card-title { font-weight: 600; color: #1e293b; font-size: 15px; }
+.card-header-row { display: flex; justify-content: space-between; align-items: center; }
+.rule-item { padding: 10px 0; border-bottom: 1px solid #f4f6fb; &:last-child { border-bottom: none; } }
 .rule-info { display: flex; justify-content: space-between; align-items: center; }
-.rule-actions { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.rule-actions { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 </style>
