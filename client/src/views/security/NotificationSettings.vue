@@ -49,7 +49,7 @@
             />
             <el-form-item label="监控扫描间隔(秒)">
               <el-input-number v-model="settings.server_check_interval" :min="60" :max="3600" />
-              <span class="hint">默认 180 秒</span>
+              <span class="hint">默认 120 秒</span>
             </el-form-item>
             <el-form-item label="监控并发数量">
               <el-input-number v-model="settings.server_monitor_concurrency" :min="1" :max="30" />
@@ -96,7 +96,7 @@
             type="success"
             show-icon
             :closable="false"
-            title="模板支持变量，例如 {{server_name}}、{{host}}、{{remark}}、{{cpu_usage}}。留空则使用系统默认模板。"
+            title="模板支持 Telegram HTML 标签（<b>加粗</b>、<code>等宽</code>、<i>斜体</i>）和变量（如 {{server_name}}、{{host}}）。使用 {{bar:cpu_usage}} 可插入动态进度条。留空则使用系统默认模板。"
             style="margin-bottom: 16px"
           />
 
@@ -138,6 +138,11 @@
             <el-descriptions-item label="剩余天数"><code v-pre>{{days_left}}</code></el-descriptions-item>
             <el-descriptions-item label="过期天数"><code v-pre>{{expired_days}}</code></el-descriptions-item>
             <el-descriptions-item label="当前时间"><code v-pre>{{time}}</code></el-descriptions-item>
+            <el-descriptions-item label="进度条(CPU)"><code v-pre>{{bar:cpu_usage}}</code></el-descriptions-item>
+            <el-descriptions-item label="进度条(内存)"><code v-pre>{{bar:memory_usage}}</code></el-descriptions-item>
+            <el-descriptions-item label="进度条(磁盘)"><code v-pre>{{bar:disk_usage}}</code></el-descriptions-item>
+            <el-descriptions-item label="告警阈值"><code v-pre>{{threshold}}</code></el-descriptions-item>
+            <el-descriptions-item label="失败原因"><code v-pre>{{error}}</code></el-descriptions-item>
           </el-descriptions>
         </el-tab-pane>
       </el-tabs>
@@ -151,12 +156,131 @@ import api from '../../api'
 import { ElMessage } from 'element-plus'
 
 const defaultTemplates = {
-  alert_template_offline: '🚨 服务器离线告警\n\n服务器：{{server_name}}\nIP：{{host}}\n端口：{{port}}\n失败原因：{{error}}\n备注：{{remark}}\n时间：{{time}}',
-  alert_template_cpu: '🚨 CPU占用过高\n\n服务器：{{server_name}}\nIP：{{host}}\n当前CPU：{{cpu_usage}}%\n阈值：{{threshold}}%\n系统：{{os_info}}\n备注：{{remark}}\n时间：{{time}}',
-  alert_template_memory: '🚨 内存占用过高\n\n服务器：{{server_name}}\nIP：{{host}}\n当前内存：{{memory_usage}}%\n已用/总量：{{memory_used}}MB / {{memory_total}}MB\n阈值：{{threshold}}%\n系统：{{os_info}}\n备注：{{remark}}\n时间：{{time}}',
-  alert_template_disk: '⚠️ 磁盘占用过高\n\n服务器：{{server_name}}\nIP：{{host}}\n根分区磁盘：{{disk_usage}}%\n已用/总量：{{disk_used}}MB / {{disk_total}}MB\n阈值：{{threshold}}%\n系统：{{os_info}}\n备注：{{remark}}\n时间：{{time}}',
-  alert_template_expiry: '⏰ 服务器即将到期\n\n服务器：{{server_name}}\nIP：{{host}}\n端口：{{port}}\n用户名：{{username}}\n分组：{{group_name}}\n标签：{{tags}}\n到期时间：{{expires_at}}\n剩余天数：{{days_left}} 天\n备注：{{remark}}\n时间：{{time}}',
-  alert_template_expired: '🚨 服务器已到期\n\n服务器：{{server_name}}\nIP：{{host}}\n端口：{{port}}\n用户名：{{username}}\n分组：{{group_name}}\n标签：{{tags}}\n到期时间：{{expires_at}}\n已过期：{{expired_days}} 天\n备注：{{remark}}\n时间：{{time}}'
+  alert_template_offline: `🚨 <b>服务器离线告警</b>
+
+━━━━━━━━━━━━━━━━━━
+🖥 <b>服务器</b>：{{server_name}}
+🌐 <b>IP地址</b>：<code>{{host}}:{{port}}</code>
+❌ <b>失败原因</b>：{{error}}
+📝 <b>备注</b>：{{remark}}
+━━━━━━━━━━━━━━━━━━
+🕐 {{time}}`,
+
+  alert_template_cpu: `🔴 <b>CPU 占用过高告警</b>
+
+━━━━━━━━━━━━━━━━━━
+🖥 <b>服务器</b>：{{server_name}}
+🌐 <b>IP地址</b>：<code>{{host}}</code>
+🖥 <b>系统</b>：{{os_info}}
+━━━━━━━━━━━━━━━━━━
+🔥 <b>CPU 使用率</b>：<code>{{cpu_usage}}%</code>
+<code>{{bar:cpu_usage}}</code>
+⚠️ <b>告警阈值</b>：{{threshold}}%
+📝 <b>备注</b>：{{remark}}
+━━━━━━━━━━━━━━━━━━
+🕐 {{time}}`,
+
+  alert_template_memory: `🟠 <b>内存占用过高告警</b>
+
+━━━━━━━━━━━━━━━━━━
+🖥 <b>服务器</b>：{{server_name}}
+🌐 <b>IP地址</b>：<code>{{host}}</code>
+🖥 <b>系统</b>：{{os_info}}
+━━━━━━━━━━━━━━━━━━
+💾 <b>内存使用率</b>：<code>{{memory_usage}}%</code>  ({{memory_used}} MB / {{memory_total}} MB)
+<code>{{bar:memory_usage}}</code>
+⚠️ <b>告警阈值</b>：{{threshold}}%
+📝 <b>备注</b>：{{remark}}
+━━━━━━━━━━━━━━━━━━
+🕐 {{time}}`,
+
+  alert_template_disk: `🟡 <b>磁盘占用过高告警</b>
+
+━━━━━━━━━━━━━━━━━━
+🖥 <b>服务器</b>：{{server_name}}
+🌐 <b>IP地址</b>：<code>{{host}}</code>
+🖥 <b>系统</b>：{{os_info}}
+━━━━━━━━━━━━━━━━━━
+💿 <b>磁盘使用率</b>：<code>{{disk_usage}}%</code>  ({{disk_used}} MB / {{disk_total}} MB)
+<code>{{bar:disk_usage}}</code>
+⚠️ <b>告警阈值</b>：{{threshold}}%
+📝 <b>备注</b>：{{remark}}
+━━━━━━━━━━━━━━━━━━
+🕐 {{time}}`,
+
+  alert_template_expiry: `⏰ <b>服务器即将到期提醒</b>
+
+┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+🖥 <b>服务器</b>：{{server_name}}
+🌐 <b>IP地址</b>：<code>{{host}}:{{port}}</code>
+👤 <b>用户名</b>：{{username}}
+📂 <b>分组</b>：{{group_name}}
+🏷 <b>标签</b>：{{tags}}
+└ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+
+📅 <b>到期时间</b>：<code>{{expires_at}}</code>
+⏳ <b>剩余天数</b>：🔥 <b>{{days_left}} 天</b>
+📝 <b>备注</b>：{{remark}}
+
+💡 <i>请及时续费，避免服务器业务中断</i>
+━━━━━━━━━━━━━━━━━━
+🕐 {{time}}`,
+
+  alert_template_expired: `🚨 <b>服务器已到期通知</b>
+
+┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+🖥 <b>服务器</b>：{{server_name}}
+🌐 <b>IP地址</b>：<code>{{host}}:{{port}}</code>
+👤 <b>用户名</b>：{{username}}
+📂 <b>分组</b>：{{group_name}}
+🏷 <b>标签</b>：{{tags}}
+└ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+
+📅 <b>到期时间</b>：<code>{{expires_at}}</code>
+⏳ <b>已过期</b>：❌ <b>{{expired_days}} 天</b>
+📝 <b>备注</b>：{{remark}}
+
+⚠️ <i>该服务器已过期，相关业务可能已受影响，请尽快处理！</i>
+━━━━━━━━━━━━━━━━━━
+🕐 {{time}}`
+}
+
+function renderBar(percent) {
+  const p = Math.min(100, Math.max(0, Number(percent) || 0))
+  const filled = Math.round(p / 5)
+  return '▓'.repeat(filled) + '░'.repeat(20 - filled)
+}
+
+const previewData = {
+  server_name: '生产Web-01',
+  host: '192.168.1.100',
+  port: '22',
+  username: 'root',
+  group_name: '生产环境',
+  tags: 'nginx, web',
+  remark: '阿里云华东1区 2核4G',
+  os_info: 'Ubuntu 22.04 LTS',
+  cpu_usage: '92.50',
+  memory_usage: '87.30',
+  memory_used: '3492',
+  memory_total: '4096',
+  disk_usage: '75.60',
+  disk_used: '15428',
+  disk_total: '20480',
+  load_avg: '3.21',
+  error: 'SSH 连接超时',
+  threshold: '90',
+  expires_at: '2026-06-15',
+  days_left: '31',
+  expired_days: '7',
+  time: new Date().toLocaleString('zh-CN', { hour12: false })
+}
+
+function renderPreview(template) {
+  let text = template
+  text = text.replace(/\{\{bar:([a-zA-Z0-9_]+)\}\}/g, (_, key) => renderBar(previewData[key] || 0))
+  text = text.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => previewData[key] || '-')
+  return text
 }
 
 const TemplateEditor = defineComponent({
@@ -166,25 +290,45 @@ const TemplateEditor = defineComponent({
   },
   emits: ['update:modelValue', 'reset'],
   setup(props, { emit }) {
+    const showPreview = ref(false)
+    const activeContent = () => props.modelValue || props.defaultTemplate
+
     return () => h('div', { class: 'template-editor' }, [
       h('div', { class: 'template-toolbar' }, [
         h('div', { class: 'template-toolbar-left' }, [
-          h('div', { class: 'template-title' }, '通知内容模板'),
-          h('div', { class: 'template-subtitle' }, '支持多行内容，Telegram 发送时会按你填写的格式推送。留空则使用系统默认模板。')
+          h('div', { class: 'template-title' }, [
+            h('span', '通知内容模板'),
+            h('span', { class: 'template-badge' }, 'Telegram HTML')
+          ]),
+          h('div', { class: 'template-subtitle' }, '支持 Telegram HTML 标签（<b>加粗</b>、<code>等宽</code>、<i>斜体</i>），变量 {{xxx}} 会自动替换。留空使用默认模板。')
         ]),
         h('div', { class: 'template-actions' }, [
+          h('button', { class: 'preview-toggle', type: 'button', onClick: () => { showPreview.value = !showPreview.value } },
+            showPreview.value ? '编辑模板' : '预览效果'),
           h('button', { class: 'reset-btn', type: 'button', onClick: () => emit('reset') }, '填入默认模板'),
           h('button', { class: 'reset-btn light', type: 'button', onClick: () => emit('update:modelValue', '') }, '清空内容')
         ])
       ]),
-      h('div', { class: 'template-input-wrap' }, [
-        h('textarea', {
-          class: 'template-textarea',
-          value: props.modelValue,
-          placeholder: props.defaultTemplate,
-          onInput: e => emit('update:modelValue', e.target.value)
-        })
-      ])
+      showPreview.value
+        ? h('div', { class: 'preview-panel' }, [
+            h('div', { class: 'preview-header' }, [
+              h('span', { class: 'preview-label' }, '📱 Telegram 预览效果'),
+              h('span', { class: 'preview-hint' }, '示例数据预览，实际发送时变量会替换为真实值')
+            ]),
+            h('div', { class: 'preview-content' },
+              activeContent().split('\n').map(line =>
+                h('div', { class: 'preview-line' }, line || ' ')
+              )
+            )
+          ])
+        : h('div', { class: 'template-input-wrap' }, [
+            h('textarea', {
+              class: 'template-textarea',
+              value: props.modelValue,
+              placeholder: props.defaultTemplate,
+              onInput: e => emit('update:modelValue', e.target.value)
+            })
+          ])
     ])
   }
 })
@@ -216,7 +360,7 @@ function defaultValue() {
     alert_disk_threshold: 90,
     alert_server_expiry_days: 2,
     alert_repeat_hours: 12,
-    server_check_interval: 180,
+    server_check_interval: 120,
     server_monitor_concurrency: 5,
     alert_template_offline: '',
     alert_template_cpu: '',
@@ -291,9 +435,23 @@ onMounted(loadSettings)
     gap: 6px;
   }
   .template-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     font-size: 15px;
     font-weight: 700;
     color: #1f2937;
+  }
+  .template-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #4f6ef7, #7b93fa);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
   }
   .template-subtitle {
     font-size: 12px;
@@ -306,6 +464,18 @@ onMounted(loadSettings)
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+  }
+  .preview-toggle {
+    border: 1px solid #22c55e;
+    color: #fff;
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    border-radius: 10px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all .2s ease;
+    &:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(34, 197, 94, 0.25); }
   }
   .reset-btn {
     border: 1px solid #409eff;
@@ -340,6 +510,42 @@ onMounted(loadSettings)
     transition: all .2s ease;
     &:focus { border-color: #409eff; box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.12); }
     &::placeholder { color: #94a3b8; white-space: pre-wrap; }
+  }
+
+  .preview-panel {
+    padding: 16px 18px 18px;
+  }
+  .preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .preview-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1e293b;
+  }
+  .preview-hint {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+  .preview-content {
+    background: #1a1a2e;
+    border-radius: 14px;
+    padding: 20px 22px;
+    color: #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.7;
+    max-height: 400px;
+    overflow-y: auto;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .preview-line {
+    min-height: 22px;
+    white-space: pre-wrap;
+    word-break: break-all;
   }
 
   :deep(.el-collapse) {

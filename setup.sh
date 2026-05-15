@@ -5,7 +5,8 @@
 #
 # 用法:
 #   bash setup.sh              # 交互式菜单
-#   bash setup.sh install      # 直接安装
+#   bash setup.sh install      # 直接安装 (PM2模式)
+#   bash setup.sh docker       # Docker安装
 #   bash setup.sh uninstall    # 直接卸载
 #   bash setup.sh update       # 更新版本
 #===============================================
@@ -666,6 +667,263 @@ do_status() {
 }
 
 # ══════════════════════════════════════════════
+# Docker 安装功能
+# ══════════════════════════════════════════════
+
+do_docker_install() {
+  print_banner
+  check_root
+  check_os
+
+  # 检查是否已安装
+  if command -v docker &>/dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "sshweb"; then
+    echo -e "${YELLOW}  检测到已运行的 SSHWeb Docker 容器${NC}"
+    if confirm_action "  是否先卸载旧容器再重新安装?" "y"; then
+      do_uninstall_silent
+    else
+      echo -e "${YELLOW}  已取消安装${NC}"
+      return 1
+    fi
+  fi
+
+  # 检查项目文件
+  if [ ! -f "${SCRIPT_DIR}/Dockerfile" ]; then
+    echo -e "${RED}错误: 请在项目根目录运行此脚本${NC}"
+    exit 1
+  fi
+
+  # ──── 交互式配置 ────
+  print_separator
+  echo -e "${BOLD}${CYAN}  Docker 安装配置${NC} ${DIM}(直接回车使用默认值)${NC}"
+  print_separator
+
+  local APP_PORT DB_EXPOSE_PORT DB_NAME DB_USER DB_PASS DB_ROOT_PASS
+
+  read_default "应用对外端口" "18080" "APP_PORT"
+  read_default "数据库对外端口" "3307" "DB_EXPOSE_PORT"
+  read_default "数据库名称" "sshweb" "DB_NAME"
+  read_default "数据库用户" "sshweb" "DB_USER"
+  read_default "数据库密码" "sshweb123456" "DB_PASS"
+  read_default "数据库 Root 密码" "rootpassword" "DB_ROOT_PASS"
+
+  # 配置确认
+  echo ""
+  print_separator
+  echo -e "${BOLD}${GREEN}  配置确认${NC}"
+  print_separator
+  echo -e "  应用端口:         ${BOLD}${APP_PORT}${NC}"
+  echo -e "  数据库对外端口:   ${BOLD}${DB_EXPOSE_PORT}${NC}"
+  echo -e "  数据库名称:       ${BOLD}${DB_NAME}${NC}"
+  echo -e "  数据库用户:       ${BOLD}${DB_USER}${NC}"
+  echo -e "  数据库密码:       ${BOLD}${DB_PASS}${NC}"
+  echo -e "  数据库 Root 密码: ${BOLD}${DB_ROOT_PASS}${NC}"
+  print_separator
+  echo ""
+
+  if ! confirm_action "  确认开始安装?" "y"; then
+    echo -e "  ${YELLOW}已取消安装${NC}"
+    return 1
+  fi
+
+  # ──── 步骤 1: 安装 Docker ────
+  step_info "1/4" "检查并安装 Docker"
+
+  if ! command -v docker &>/dev/null; then
+    echo -e "  ${YELLOW}安装 Docker...${NC}"
+    curl -fsSL https://get.docker.com | bash
+    systemctl enable docker
+    systemctl start docker
+    step_done "Docker 安装完成: $(docker --version)"
+  else
+    step_done "Docker 已安装: $(docker --version)"
+  fi
+
+  if ! docker compose version &>/dev/null; then
+    echo -e "  ${YELLOW}安装 Docker Compose 插件...${NC}"
+    apt-get update -y
+    apt-get install -y docker-compose-plugin 2>/dev/null || apt-get install -y docker-compose
+  fi
+  step_done "Docker Compose: $(docker compose version 2>/dev/null | head -1)"
+
+  # ──── 步骤 2: 生成配置 ────
+  step_info "2/4" "生成 Docker Compose 配置"
+
+  local JWT_SECRET ENCRYPTION_KEY
+  JWT_SECRET=$(openssl rand -base64 32)
+  ENCRYPTION_KEY=$(openssl rand -base64 32)
+
+  mkdir -p "${INSTALL_DIR}"
+  cp -r "${SCRIPT_DIR}"/* "${INSTALL_DIR}/"
+  cd "${INSTALL_DIR}"
+
+  cat > "${INSTALL_DIR}/docker-compose.custom.yml" <<EOF
+version: '3.8'
+
+services:
+  sshweb:
+    build: .
+    container_name: sshweb-app
+    restart: always
+    ports:
+      - "${APP_PORT}:18080"
+    environment:
+      - NODE_ENV=production
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=${DB_NAME}
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD=${DB_PASS}
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - SSH_CONNECT_TIMEOUT=10000
+      - SSH_EXEC_TIMEOUT=60000
+      - ENABLE_DANGEROUS_COMMAND_BLOCK=true
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - sshweb-net
+    volumes:
+      - sshweb-logs:/var/log/sshweb
+
+  db:
+    image: mariadb:11
+    container_name: sshweb-db
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
+      - MYSQL_DATABASE=${DB_NAME}
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD=${DB_PASS}
+    volumes:
+      - sshweb-db-data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sshweb-net
+    ports:
+      - "${DB_EXPOSE_PORT}:3306"
+
+networks:
+  sshweb-net:
+    driver: bridge
+
+volumes:
+  sshweb-db-data:
+  sshweb-logs:
+EOF
+
+  cat > "${INSTALL_DIR}/.env.docker" <<EOF
+# SSHWeb Docker 安装配置
+# 生成时间: $(date)
+APP_PORT=${APP_PORT}
+DB_EXPOSE_PORT=${DB_EXPOSE_PORT}
+DB_NAME=${DB_NAME}
+DB_USER=${DB_USER}
+DB_PASS=${DB_PASS}
+DB_ROOT_PASS=${DB_ROOT_PASS}
+JWT_SECRET=${JWT_SECRET}
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
+EOF
+
+  step_done "Docker Compose 配置已生成"
+
+  # ──── 步骤 3: 构建镜像 ────
+  step_info "3/4" "构建 Docker 镜像 (可能需要几分钟)"
+
+  cd "${INSTALL_DIR}"
+  docker compose -f docker-compose.custom.yml build --no-cache
+  step_done "镜像构建完成"
+
+  # ──── 步骤 4: 启动服务 ────
+  step_info "4/4" "启动 Docker 容器"
+
+  docker compose -f docker-compose.custom.yml up -d
+  step_done "容器已启动"
+
+  # ──── 安装验证 ────
+  echo ""
+  echo -e "${BOLD}${YELLOW}  安装验证${NC}"
+
+  sleep 5
+  local APP_STATUS DB_STATUS
+  APP_STATUS=$(docker ps --filter "name=sshweb-app" --format "{{.Status}}" 2>/dev/null)
+  DB_STATUS=$(docker ps --filter "name=sshweb-db" --format "{{.Status}}" 2>/dev/null)
+
+  if echo "$APP_STATUS" | grep -q "Up"; then
+    step_done "应用容器: ${APP_STATUS}"
+  else
+    step_fail "应用容器: 未运行"
+    step_warn "请执行 docker logs sshweb-app 查看错误日志"
+  fi
+
+  if echo "$DB_STATUS" | grep -q "Up"; then
+    step_done "数据库容器: ${DB_STATUS}"
+  else
+    step_fail "数据库容器: 未运行"
+    step_warn "请执行 docker logs sshweb-db 查看错误日志"
+  fi
+
+  sleep 3
+  local HTTP_CODE
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://127.0.0.1:${APP_PORT}/" 2>/dev/null || echo "000")
+  if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+    step_done "HTTP 响应: ${HTTP_CODE} 正常"
+  elif [ "$HTTP_CODE" != "000" ]; then
+    step_warn "HTTP 响应: ${HTTP_CODE} (服务可能仍在启动)"
+  else
+    step_fail "HTTP 响应: 无响应"
+  fi
+
+  # ──── 安装完成提示 ────
+  local SERVER_IP
+  SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+
+  echo ""
+  echo -e "${GREEN}"
+  echo "  ╔═══════════════════════════════════════════════╗"
+  echo "  ║                                               ║"
+  echo "  ║       SSHWeb Docker 安装完成!                  ║"
+  echo "  ║                                               ║"
+  echo "  ╚═══════════════════════════════════════════════╝"
+  echo -e "${NC}"
+  echo -e "  ${BOLD}访问信息${NC}"
+  print_separator
+  echo -e "  地址:  ${CYAN}http://${SERVER_IP}:${APP_PORT}${NC}"
+  echo -e "  账号:  ${BOLD}admin${NC}"
+  echo -e "  密码:  ${BOLD}admin123${NC}"
+  echo ""
+  echo -e "  ${BOLD}数据库信息${NC}"
+  print_separator
+  echo -e "  主机:  localhost"
+  echo -e "  端口:  ${DB_EXPOSE_PORT}"
+  echo -e "  库名:  ${DB_NAME}"
+  echo -e "  用户:  ${DB_USER}"
+  echo ""
+  echo -e "  ${BOLD}路径信息${NC}"
+  print_separator
+  echo -e "  项目:      ${INSTALL_DIR}"
+  echo -e "  Compose:   ${INSTALL_DIR}/docker-compose.custom.yml"
+  echo -e "  环境变量:  ${INSTALL_DIR}/.env.docker"
+  echo ""
+  echo -e "  ${BOLD}常用命令${NC}"
+  print_separator
+  echo -e "  docker compose -f docker-compose.custom.yml logs -f       # 查看日志"
+  echo -e "  docker compose -f docker-compose.custom.yml restart       # 重启服务"
+  echo -e "  docker compose -f docker-compose.custom.yml down          # 停止服务"
+  echo -e "  docker compose -f docker-compose.custom.yml up -d         # 启动服务"
+  echo -e "  docker compose -f docker-compose.custom.yml ps            # 查看状态"
+  echo ""
+  echo -e "  ${YELLOW}${BOLD}首次登录后请立即修改默认密码!${NC}"
+  echo ""
+}
+
+# ══════════════════════════════════════════════
 # 主菜单
 # ══════════════════════════════════════════════
 
@@ -674,19 +932,21 @@ show_menu() {
 
   echo -e "  ${BOLD}请选择操作:${NC}"
   echo ""
-  echo -e "  ${GREEN}1)${NC} 安装 SSHWeb"
-  echo -e "  ${GREEN}2)${NC} 卸载 SSHWeb"
-  echo -e "  ${GREEN}3)${NC} 更新 SSHWeb"
-  echo -e "  ${GREEN}4)${NC} 查看状态"
+  echo -e "  ${GREEN}1)${NC} 安装 SSHWeb (PM2 模式)"
+  echo -e "  ${GREEN}2)${NC} 安装 SSHWeb (Docker 模式)"
+  echo -e "  ${GREEN}3)${NC} 卸载 SSHWeb"
+  echo -e "  ${GREEN}4)${NC} 更新 SSHWeb"
+  echo -e "  ${GREEN}5)${NC} 查看状态"
   echo -e "  ${RED}0)${NC} 退出"
   echo ""
-  read -p "  请输入选项 [0-4]: " choice
+  read -p "  请输入选项 [0-5]: " choice
 
   case "$choice" in
     1) do_install ;;
-    2) do_uninstall ;;
-    3) do_update ;;
-    4) do_status ;;
+    2) do_docker_install ;;
+    3) do_uninstall ;;
+    4) do_update ;;
+    5) do_status ;;
     0) echo -e "  ${YELLOW}已退出${NC}"; exit 0 ;;
     *) echo -e "  ${RED}无效选项${NC}"; show_menu ;;
   esac
@@ -695,13 +955,14 @@ show_menu() {
 # ──── 入口 ────
 case "${1}" in
   install)    do_install ;;
+  docker)     do_docker_install ;;
   uninstall)  do_uninstall ;;
   update)     do_update ;;
   status)     do_status ;;
   *)
     if [ -n "$1" ]; then
       echo -e "${RED}未知参数: $1${NC}"
-      echo -e "用法: bash $0 [install|uninstall|update|status]"
+      echo -e "用法: bash $0 [install|docker|uninstall|update|status]"
       echo -e "      bash $0              # 交互式菜单"
       exit 1
     fi
