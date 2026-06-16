@@ -380,6 +380,12 @@ router.get('/:id', async (req, res) => {
     server.has_password = !!server.password_encrypted;
     server.has_private_key = !!server.private_key_encrypted;
     server.tags = parseTagsField(server.tags);
+    // 明文回显凭据需显式开启 ALLOW_PLAIN_CREDENTIAL_EXPORT（默认关闭，避免凭据随接口外泄）
+    if (config.security.allowPlainCredentialExport) {
+      server.password = safeDecrypt(server.password_encrypted);
+      server.private_key = safeDecrypt(server.private_key_encrypted);
+      server.private_key_passphrase = safeDecrypt(server.private_key_passphrase_encrypted);
+    }
     delete server.password_encrypted;
     delete server.private_key_encrypted;
     delete server.private_key_passphrase_encrypted;

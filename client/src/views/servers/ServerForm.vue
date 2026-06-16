@@ -59,7 +59,7 @@ onMounted(async () => {
     const res = await api.get(`/api/servers/${route.params.id}`)
     if (res.code === 0) {
       const d = res.data
-      form.value = { ...form.value, name: d.name, host: d.host, port: d.port, username: d.username, auth_type: d.auth_type, group_id: d.group_id, tags: d.tags || [], expires_at: d.expires_at || '', os_info: d.os_info || '', remark: d.remark || '' }
+      form.value = { ...form.value, name: d.name, host: d.host, port: d.port, username: d.username, auth_type: d.auth_type, password: d.password || '', private_key: d.private_key || '', private_key_passphrase: d.private_key_passphrase || '', group_id: d.group_id, tags: d.tags || [], expires_at: d.expires_at || '', os_info: d.os_info || '', remark: d.remark || '' }
     }
   }
 })
@@ -68,7 +68,11 @@ async function save() {
   if (!form.value.name || !form.value.host || !form.value.username) return ElMessage.warning('请填写必填项')
   saving.value = true
   const payload = { ...form.value }
-  if (isEdit.value && !payload.password) delete payload.password
+  if (isEdit.value) {
+    if (!payload.password) delete payload.password
+    if (!payload.private_key) delete payload.private_key
+    if (!payload.private_key_passphrase) delete payload.private_key_passphrase
+  }
   const res = isEdit.value ? await api.put(`/api/servers/${route.params.id}`, payload) : await api.post('/api/servers', payload)
   saving.value = false
   if (res.code === 0) { ElMessage.success('保存成功'); router.push('/servers') }
