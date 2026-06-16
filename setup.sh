@@ -65,6 +65,12 @@ step_fail() {
   echo -e "  ${RED}✗ $1${NC}"
 }
 
+# 容错的 apt 源更新：某个第三方源下线（如已 EOL 的 *-backports）不应中断整个安装。
+# 真正缺包时由后续 apt-get install 明确报错，所以这里不因 update 失败而退出。
+apt_update_safe() {
+  apt-get update -y || step_warn "apt 源更新部分失败（可能某个镜像已下线），将继续尝试安装；若后续装包失败请检查源配置"
+}
+
 check_root() {
   if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}错误: 请使用 root 权限运行此脚本${NC}"
@@ -136,7 +142,7 @@ do_install() {
   read_default "数据库端口" "3306" "DB_PORT"
   read_default "数据库名称" "sshweb" "DB_NAME"
   read_default "数据库用户" "sshweb" "DB_USER"
-  read_default "数据库密码" "sshweb123456" "DB_PASS"
+  read_default "数据库密码" "$(openssl rand -hex 16)" "DB_PASS"
 
   # 自动判断本地/远程
   local IS_LOCAL=false
@@ -169,13 +175,31 @@ do_install() {
 
   # ──── 步骤 1: 系统依赖 ────
   step_info "1/7" "安装系统依赖"
-  apt-get update -y
+  apt_update_safe
   apt-get install -y curl wget git unzip mariadb-client openssl
 
-  if ! command -v node &>/dev/null; then
-    echo -e "  ${YELLOW}安装 Node.js 20.x...${NC}"
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt-get install -y nodejs
+  # 任一缺失则安装 Node.js（含 npm）。先走 nodesource；装完仍无 npm 时
+  # （常见于 EOL 发行版/apt 损坏，装到了不含 npm 的发行版 nodejs）回退官方二进制。
+  if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
+    echo -e "  ${YELLOW}安装 Node.js 20.x（含 npm）...${NC}"
+    { curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs; } || true
+    hash -r
+  fi
+
+  # nodesource 在某些环境下装不到 npm —— 回退官方 Node 二进制（node+npm 一体，不依赖 apt 源）
+  if ! command -v npm &>/dev/null; then
+    step_warn "nodesource 未提供 npm，改用官方 Node 二进制安装"
+    apt-get install -y xz-utils >/dev/null 2>&1 || true
+    NODE_BIN_VER="v20.18.1"
+    curl -fsSL "https://nodejs.org/dist/${NODE_BIN_VER}/node-${NODE_BIN_VER}-linux-x64.tar.xz" \
+      | tar -xJ -C /usr/local --strip-components=1
+    hash -r
+  fi
+
+  # 两条路都走完仍未装上 npm —— 明确报错，避免含糊地继续到 npm install 才失败
+  if ! command -v npm &>/dev/null; then
+    step_fail "npm 安装失败，无法继续。请手动安装 Node.js 20+ 后重试: https://nodejs.org/"
+    return 1
   fi
   step_done "Node.js $(node -v) / npm $(npm -v)"
 
@@ -208,6 +232,7 @@ do_install() {
     mysql -u root <<EOF
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
 FLUSH PRIVILEGES;
 EOF
@@ -703,7 +728,7 @@ do_docker_install() {
   read_default "数据库对外端口" "3307" "DB_EXPOSE_PORT"
   read_default "数据库名称" "sshweb" "DB_NAME"
   read_default "数据库用户" "sshweb" "DB_USER"
-  read_default "数据库密码" "sshweb123456" "DB_PASS"
+  read_default "数据库密码" "$(openssl rand -hex 16)" "DB_PASS"
   read_default "数据库 Root 密码" "rootpassword" "DB_ROOT_PASS"
 
   # 配置确认
@@ -740,7 +765,7 @@ do_docker_install() {
 
   if ! docker compose version &>/dev/null; then
     echo -e "  ${YELLOW}安装 Docker Compose 插件...${NC}"
-    apt-get update -y
+    apt_update_safe
     apt-get install -y docker-compose-plugin 2>/dev/null || apt-get install -y docker-compose
   fi
   step_done "Docker Compose: $(docker compose version 2>/dev/null | head -1)"
