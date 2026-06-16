@@ -169,6 +169,17 @@ onMounted(async () => {
   if (r.code === 0) servers.value = r.data
 })
 
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 function normalizePath(p) {
   let value = String(p || '/').trim()
   if (!value) value = '/'
@@ -319,10 +330,13 @@ async function batchUploadFiles() {
   }
 }
 
-function downloadFile(row) {
+async function downloadFile(row) {
   const filepath = row.path || joinPath(currentPath.value, row.name)
-  const token = localStorage.getItem('token')
-  window.open(`/api/files/download?server_id=${serverId.value}&filepath=${encodeURIComponent(filepath)}&token=${encodeURIComponent(token || '')}`, '_blank')
+  const blob = await api.get('/api/files/download', {
+    params: { server_id: serverId.value, filepath },
+    responseType: 'blob'
+  })
+  saveBlob(blob, row.name || filepath.split('/').pop() || 'download')
 }
 
 async function deleteFile(row) {

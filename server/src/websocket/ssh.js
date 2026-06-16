@@ -9,7 +9,8 @@ function setupSSHTerminal(io) {
   const nsp = io.of('/ssh');
 
   nsp.use(async (socket, next) => {
-    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+      const queryToken = config.security.allowQueryToken ? socket.handshake.query?.token : '';
+      const token = socket.handshake.auth?.token || queryToken;
     if (!token) return next(new Error('未提供认证令牌'));
     try {
       const decoded = jwt.verify(token, config.jwtSecret);

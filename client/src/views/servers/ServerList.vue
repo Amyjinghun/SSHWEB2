@@ -184,6 +184,17 @@ const importing = ref(false)
 
 onMounted(() => { loadData(); loadGroups() })
 
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 async function loadData() {
   loading.value = true
   try {
@@ -247,15 +258,13 @@ async function renewServer(row, months) {
   else ElMessage.error(res.message)
 }
 
-function downloadTemplate() {
-  const token = localStorage.getItem('token') || ''
-  window.open(`/api/servers/import/template?token=${encodeURIComponent(token)}`, '_blank')
+async function downloadTemplate() {
+  const blob = await api.get('/api/servers/import/template', { responseType: 'blob' })
+  saveBlob(blob, 'servers_import_template.csv')
 }
 
 function buildServerQuery() {
   const query = new URLSearchParams()
-  const token = localStorage.getItem('token') || ''
-  if (token) query.set('token', token)
   if (keyword.value) query.set('keyword', keyword.value)
   if (groupId.value) query.set('group_id', groupId.value)
   if (statusFilter.value) query.set('status', statusFilter.value)
@@ -281,7 +290,9 @@ async function exportServers(command = 'csv') {
     query.set('format', format === 'json' ? 'json' : 'csv')
     if (includeCredentials) query.set('include_credentials', '1')
     ElMessage.info(`正在导出${selectedText}的服务器配置${includeCredentials ? '（含明文凭据）' : '（不含明文凭据）'}`)
-    window.open(`/api/servers/export?${query.toString()}`, '_blank')
+    const blob = await api.get(`/api/servers/export?${query.toString()}`, { responseType: 'blob' })
+    const ext = format === 'json' ? 'json' : 'csv'
+    saveBlob(blob, `servers_export.${ext}`)
   } catch (e) {
     // 用户取消导出
   }

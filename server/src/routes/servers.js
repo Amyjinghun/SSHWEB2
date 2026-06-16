@@ -4,6 +4,7 @@ const { authMiddleware } = require('../middleware/auth');
 const { createSSHConnection, execCommand } = require('../ssh/connection');
 const { writeAuditLog } = require('../utils/audit');
 const { checkOneServer } = require('../scheduler');
+const config = require('../config');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -332,6 +333,9 @@ router.get('/export', async (req, res) => {
   try {
     const format = String(req.query.format || 'csv').toLowerCase() === 'json' ? 'json' : 'csv';
     const includeCredentials = ['1', 'true', 'yes'].includes(String(req.query.include_credentials || '').toLowerCase());
+    if (includeCredentials && !config.security.allowPlainCredentialExport) {
+      return res.status(403).json({ code: 403, message: 'Plain credential export is disabled by server configuration' });
+    }
     if (includeCredentials && req.user.role !== 'superadmin') {
       return res.status(403).json({ code: 403, message: '只有超级管理员可以导出明文凭据' });
     }

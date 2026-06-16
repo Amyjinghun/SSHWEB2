@@ -9,11 +9,12 @@ const router = express.Router();
 const settingsLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
-  message: { code: 429, message: '设置操作过于频繁，请稍后再试' }
+  message: { code: 429, message: 'Too many settings operations, please try again later' }
 });
+
 const DEFAULT_SETTINGS = {
-  system_name: 'SSHWeb 服务器群控面板',
-  login_title: 'Linux 服务器群控管理系统',
+  system_name: 'SSHWeb',
+  login_title: 'SSHWeb server operations panel',
   default_page_size: '20',
   terminal_theme: 'dark',
   terminal_font_size: '14',
@@ -23,7 +24,7 @@ const DEFAULT_SETTINGS = {
   login_lock_time: '300',
   jwt_expires_in: '7d',
   enable_dangerous_block: 'true',
-  dangerous_action: 'confirm',
+  dangerous_action: 'block',
   record_terminal_log: 'false',
   allow_batch_dangerous: 'false',
   tg_enabled: 'false',
@@ -59,22 +60,29 @@ router.get('/', async (req, res) => {
     const obj = { ...DEFAULT_SETTINGS };
     settings.forEach(s => { obj[s.setting_key] = s.setting_value; });
     res.json({ code: 0, data: obj });
-  } catch (err) { res.json({ code: 500, message: err.message }); }
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
 });
 
 router.put('/', settingsLimiter, roleMiddleware('superadmin', 'admin'), async (req, res) => {
   try {
     for (const key of Object.keys(req.body || {})) {
       if (!ALLOWED_SETTING_KEYS.has(key)) {
-        return res.json({ code: 400, message: `非法设置项: ${key}` });
+        return res.json({ code: 400, message: `Invalid setting key: ${key}` });
       }
     }
-    for (const [key, value] of Object.entries(req.body)) {
-      await db.update('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)', [key, String(value)]);
+    for (const [key, value] of Object.entries(req.body || {})) {
+      await db.update(
+        'INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)',
+        [key, String(value)]
+      );
     }
     await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'update_settings', detail: req.body });
-    res.json({ code: 0, message: '设置已更新' });
-  } catch (err) { res.json({ code: 500, message: err.message }); }
+    res.json({ code: 0, message: 'Settings updated' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
 });
 
 router.post('/test-telegram', settingsLimiter, roleMiddleware('superadmin', 'admin'), async (req, res) => {
@@ -85,29 +93,30 @@ router.post('/test-telegram', settingsLimiter, roleMiddleware('superadmin', 'adm
 
     const botToken = req.body && req.body.tg_bot_token !== undefined ? String(req.body.tg_bot_token || '') : current.tg_bot_token;
     const chatId = req.body && req.body.tg_chat_id !== undefined ? String(req.body.tg_chat_id || '') : current.tg_chat_id;
-    const ret = await sendTelegramMessageWithConfig('✅ SSHWeb Telegram 通知测试成功', {
+    const ret = await sendTelegramMessageWithConfig('SSHWeb Telegram notification test succeeded', {
       enabled: true,
       botToken,
       chatId
     });
 
-    res.json({ code: 0, message: ret.skipped ? ret.message : 'Telegram 测试消息已发送' });
-  } catch (err) { res.json({ code: 500, message: err.message }); }
+    res.json({ code: 0, message: ret.skipped ? ret.message : 'Telegram test message sent' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
 });
 
 router.post('/cleanup', roleMiddleware('superadmin'), async (req, res) => {
   try {
     const { audit_days = 90, command_log_days = 90, alert_days = 90 } = req.body;
     const results = {};
-    const r1 = await db.remove('DELETE FROM audit_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', [audit_days]);
-    results.audit_logs = r1;
-    const r2 = await db.remove('DELETE FROM command_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', [command_log_days]);
-    results.command_logs = r2;
-    const r3 = await db.remove('DELETE FROM alert_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', [alert_days]);
-    results.alert_logs = r3;
+    results.audit_logs = await db.remove('DELETE FROM audit_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', [audit_days]);
+    results.command_logs = await db.remove('DELETE FROM command_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', [command_log_days]);
+    results.alert_logs = await db.remove('DELETE FROM alert_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', [alert_days]);
     await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'data_cleanup', detail: { audit_days, command_log_days, alert_days, results } });
-    res.json({ code: 0, message: '清理完成', data: results });
-  } catch (err) { res.json({ code: 500, message: err.message }); }
+    res.json({ code: 0, message: 'Cleanup complete', data: results });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
 });
 
 module.exports = router;

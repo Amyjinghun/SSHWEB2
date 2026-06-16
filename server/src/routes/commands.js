@@ -68,7 +68,8 @@ router.post('/exec', commandLimiter, async (req, res) => {
     const settings = await db.queryOne("SELECT setting_value FROM settings WHERE setting_key='enable_dangerous_block'");
     if (settings && settings.setting_value === 'true' && isDangerousCommand(command)) {
       const action = await db.queryOne("SELECT setting_value FROM settings WHERE setting_key='dangerous_action'");
-      if (action?.setting_value === 'block') {
+      const dangerousAction = action?.setting_value || config.security.dangerousCommandAction;
+      if (dangerousAction === 'block') {
         return res.json({ code: 403, message: '该命令被安全策略拦截，属于危险命令' });
       }
     }

@@ -943,7 +943,7 @@ show_menu() {
 
   case "$choice" in
     1) do_install ;;
-    2) do_docker_install ;;
+    2) bash "${SCRIPT_DIR}/docker-install.sh" install ;;
     3) do_uninstall ;;
     4) do_update ;;
     5) do_status ;;
@@ -955,7 +955,7 @@ show_menu() {
 # ──── 入口 ────
 case "${1}" in
   install)    do_install ;;
-  docker)     do_docker_install ;;
+  docker)     bash "${SCRIPT_DIR}/docker-install.sh" install ;;
   uninstall)  do_uninstall ;;
   update)     do_update ;;
   status)     do_status ;;

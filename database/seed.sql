@@ -184,7 +184,7 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`, `description`) VA
 ('login_lock_time', '300', '登录失败锁定时间(秒)'),
 ('jwt_expires_in', '7d', 'Token有效期'),
 ('enable_dangerous_block', 'true', '启用危险命令拦截'),
-('dangerous_action', 'confirm', '危险命令处理方式: block|confirm'),
+('dangerous_action', 'block', '危险命令处理方式: block|confirm'),
 ('record_terminal_log', 'false', '记录终端日志'),
 ('allow_batch_dangerous', 'false', '允许批量执行危险命令'),
 ('tg_enabled', 'false', '是否启用Telegram通知'),

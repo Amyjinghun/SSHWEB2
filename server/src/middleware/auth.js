@@ -3,6 +3,7 @@ const config = require('../config');
 const db = require('../db');
 
 function allowsQueryToken(req) {
+  if (!config.security.allowQueryToken) return false;
   const path = String(req.originalUrl || req.url || '').split('?')[0];
   return [
     '/api/files/download',

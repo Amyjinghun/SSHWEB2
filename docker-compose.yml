@@ -13,14 +13,14 @@ services:
       - NODE_ENV=production
       - MYSQL_HOST=db
       - MYSQL_PORT=3306
-      - MYSQL_DATABASE=${DB_NAME:-sshweb}
-      - MYSQL_USER=${DB_USER:-sshweb}
-      - MYSQL_PASSWORD=${DB_PASS:-sshweb123456}
-      - JWT_SECRET=${JWT_SECRET:-please_change_this_secret_key}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-please_change_this_encryption_key}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-sshweb}
+      - MYSQL_USER=${MYSQL_USER:-sshweb}
       - SSH_CONNECT_TIMEOUT=10000
       - SSH_EXEC_TIMEOUT=60000
       - ENABLE_DANGEROUS_COMMAND_BLOCK=true
+      - DANGEROUS_COMMAND_ACTION=block
+      - ALLOW_QUERY_TOKEN=false
+      - ALLOW_PLAIN_CREDENTIAL_EXPORT=false
     depends_on:
       db:
         condition: service_healthy
@@ -33,11 +33,11 @@ services:
     image: mariadb:11
     container_name: sshweb-db
     restart: always
+    env_file:
+      - .env.docker
     environment:
-      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS:-rootpassword}
-      - MYSQL_DATABASE=${DB_NAME:-sshweb}
-      - MYSQL_USER=${DB_USER:-sshweb}
-      - MYSQL_PASSWORD=${DB_PASS:-sshweb123456}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-sshweb}
+      - MYSQL_USER=${MYSQL_USER:-sshweb}
     volumes:
       - sshweb-db-data:/var/lib/mysql
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql

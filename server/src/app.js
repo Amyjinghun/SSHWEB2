@@ -11,13 +11,23 @@ const { setupRealtimeMetrics } = require('./websocket/realtime-metrics');
 const { startSchedulers } = require('./scheduler');
 const db = require('./db');
 
+// 进程级兜底：任何未被路由 catch 的异步拒绝/同步异常都记录下来，
+// uncaughtException 时进程状态未知，退出交由 PM2 重启。
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED REJECTION]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', err);
+  process.exit(1);
+});
+
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const io = new Server(server, { cors: config.cors });
 
 app.set('trust proxy', 1);
 
-app.use(cors());
+app.use(cors(config.cors));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -46,12 +56,24 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 
 // SPA fallback
 app.get('*', (req, res) => {
+  // 未匹配的 /api/* 一律返回 JSON 404，避免把 index.html 当 API 响应返回
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ code: 404, message: 'API not found' });
+  }
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
     res.status(404).json({ code: 404, message: 'API not found' });
   }
+});
+
+// 全局错误处理中间件：捕获任何 next(err) 或未被路由处理的异常。
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  console.error('[UNHANDLED ERROR]', err);
+  const message = config.isProduction ? '服务器内部错误' : (err.message || '服务器内部错误');
+  res.status(500).json({ code: 500, message });
 });
 
 // WebSocket SSH 终端
@@ -61,6 +83,13 @@ setupRealtimeMetrics(io);
 
 async function bootstrap() {
   await db.ensureSchema();
+
+  // 清理上次进程中断时遗留的"运行中"批量任务，避免它们永远卡在该状态
+  try {
+    await db.update("UPDATE batch_tasks SET status='failed', finished_at=COALESCE(finished_at, NOW()) WHERE status='running'");
+  } catch (err) {
+    console.error('[BOOTSTRAP] 清理遗留批量任务失败:', err.message);
+  }
 
   // 启动定时任务
   startSchedulers();

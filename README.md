@@ -57,14 +57,14 @@
 | 前端 | Vue 3 + Vite + Element Plus + ECharts + xterm.js + Socket.IO |
 | 后端 | Node.js + Express + Socket.IO + ssh2 + node-cron |
 | 数据库 | MySQL / MariaDB |
-| 部署 | PM2 / Docker / 1Panel |
+| 部署 | PM2 / Docker |
 
 ## 安装部署
 
 ### 方式一：Debian/Ubuntu 一键安装
 
 ```bash
-git clone <repo-url> && cd SSHWEB3
+git clone <repo-url> && cd SSHWEB2
 bash setup.sh install
 ```
 
@@ -89,7 +89,7 @@ bash setup.sh status       # 查看状态
 ### 方式二：Docker 部署
 
 ```bash
-git clone <repo-url> && cd SSHWEB3
+git clone <repo-url> && cd SSHWEB2
 bash setup.sh docker
 ```
 
@@ -100,20 +100,7 @@ bash setup.sh docker
 
 自动安装 Docker 和 Compose 插件，构建镜像并启动容器。
 
-### 方式三：1Panel 部署
-
-适用于已安装 [1Panel](https://1panel.cn) 的服务器。
-
-```bash
-# 1. 在 1Panel 中创建 MySQL/MariaDB 数据库，记录连接信息
-# 2. 克隆项目并运行安装脚本
-git clone <repo-url> && cd SSHWEB3
-bash 1panel-install.sh
-```
-
-安装后在 1Panel 中配置反向代理：网站 → 创建网站 → 反向代理 → `http://127.0.0.1:18080`。
-
-### 方式四：手动安装
+### 方式三：手动安装
 
 ```bash
 # 1. 安装 Node.js 18+ 和 MySQL/MariaDB
@@ -184,7 +171,7 @@ docker compose up -d    # 启动
 ## 项目结构
 
 ```
-SSHWEB3/
+SSHWEB2/
 ├── client/                    # 前端 Vue 3 项目
 │   └── src/
 │       ├── api/               # Axios 请求封装
@@ -221,8 +208,7 @@ SSHWEB3/
 ├── setup.sh                   # Debian 统一安装/卸载脚本
 ├── docker-install.sh          # Docker 安装脚本
 ├── Dockerfile                 # Docker 镜像
-├── docker-compose.yml         # Docker Compose 配置
-└── 1panel-install.sh          # 1Panel 安装脚本
+└── docker-compose.yml         # Docker Compose 配置
 ```
 
 ## 许可证

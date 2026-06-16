@@ -3,6 +3,18 @@ const config = require('../config');
 
 const pool = mysql.createPool(config.mysql);
 
+// 生产环境下，mysql2 错误的 message 含表名/字段名/约束名等敏感信息，
+// 在此统一脱敏并落日志，避免经由各路由的 catch 直接返回给前端。
+function wrapDbError(err) {
+  if (!err) return err;
+  const isDbError = err.code || err.errno || err.sqlState;
+  if (config.isProduction && isDbError) {
+    console.error('[DB ERROR]', err.code || '', '-', err.message, err.sql ? `\nSQL: ${err.sql}` : '');
+    return new Error('数据库操作失败，请稍后重试或联系管理员');
+  }
+  return err;
+}
+
 async function ignoreDuplicateColumn(sql) {
   try {
     await pool.execute(sql);
@@ -20,8 +32,12 @@ async function ensureSchema() {
 }
 
 async function query(sql, params) {
-  const [rows] = await pool.execute(sql, params);
-  return rows;
+  try {
+    const [rows] = await pool.execute(sql, params);
+    return rows;
+  } catch (err) {
+    throw wrapDbError(err);
+  }
 }
 
 async function queryOne(sql, params) {
@@ -30,18 +46,30 @@ async function queryOne(sql, params) {
 }
 
 async function insert(sql, params) {
-  const [result] = await pool.execute(sql, params);
-  return result.insertId;
+  try {
+    const [result] = await pool.execute(sql, params);
+    return result.insertId;
+  } catch (err) {
+    throw wrapDbError(err);
+  }
 }
 
 async function update(sql, params) {
-  const [result] = await pool.execute(sql, params);
-  return result.affectedRows;
+  try {
+    const [result] = await pool.execute(sql, params);
+    return result.affectedRows;
+  } catch (err) {
+    throw wrapDbError(err);
+  }
 }
 
 async function remove(sql, params) {
-  const [result] = await pool.execute(sql, params);
-  return result.affectedRows;
+  try {
+    const [result] = await pool.execute(sql, params);
+    return result.affectedRows;
+  } catch (err) {
+    throw wrapDbError(err);
+  }
 }
 
 module.exports = { pool, query, queryOne, insert, update, remove, ensureSchema };

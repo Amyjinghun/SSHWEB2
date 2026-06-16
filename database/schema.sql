@@ -1,9 +1,6 @@
--- SSHWeb 数据库初始化脚本
-
 CREATE DATABASE IF NOT EXISTS `sshweb` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE `sshweb`;
 
--- 用户表
 CREATE TABLE IF NOT EXISTS `users` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `username` VARCHAR(64) NOT NULL UNIQUE,
@@ -14,18 +11,16 @@ CREATE TABLE IF NOT EXISTS `users` (
   `last_login_at` DATETIME NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 服务器分组表
 CREATE TABLE IF NOT EXISTS `server_groups` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `name` VARCHAR(100) NOT NULL UNIQUE,
   `sort_order` INT NOT NULL DEFAULT 0,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 服务器表
 CREATE TABLE IF NOT EXISTS `servers` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `name` VARCHAR(100) NOT NULL,
@@ -44,7 +39,7 @@ CREATE TABLE IF NOT EXISTS `servers` (
   `memory_usage` DECIMAL(5,2) NULL,
   `disk_usage` DECIMAL(5,2) NULL,
   `last_connected_at` DATETIME NULL,
-  `expires_at` DATE NULL COMMENT '服务器到期日期',
+  `expires_at` DATE NULL COMMENT 'Server expiry date',
   `remark` TEXT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -52,9 +47,8 @@ CREATE TABLE IF NOT EXISTS `servers` (
   INDEX `idx_status` (`status`),
   INDEX `idx_expires_at` (`expires_at`),
   CONSTRAINT `fk_servers_group` FOREIGN KEY (`group_id`) REFERENCES `server_groups`(`id`) ON DELETE SET NULL
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 命令模板表
 CREATE TABLE IF NOT EXISTS `command_templates` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `name` VARCHAR(100) NOT NULL,
@@ -65,9 +59,8 @@ CREATE TABLE IF NOT EXISTS `command_templates` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY `uk_command_template_name_category` (`name`, `category`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 批量任务表
 CREATE TABLE IF NOT EXISTS `batch_tasks` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `user_id` BIGINT NOT NULL,
@@ -83,9 +76,8 @@ CREATE TABLE IF NOT EXISTS `batch_tasks` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_user_id` (`user_id`),
   INDEX `idx_status` (`status`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 命令执行日志表
 CREATE TABLE IF NOT EXISTS `command_logs` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `task_id` BIGINT NULL,
@@ -105,9 +97,8 @@ CREATE TABLE IF NOT EXISTS `command_logs` (
   INDEX `idx_user_id` (`user_id`),
   INDEX `idx_server_id` (`server_id`),
   INDEX `idx_status` (`status`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 服务器状态记录表
 CREATE TABLE IF NOT EXISTS `server_metrics` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `server_id` BIGINT NOT NULL,
@@ -122,9 +113,8 @@ CREATE TABLE IF NOT EXISTS `server_metrics` (
   `uptime` VARCHAR(100) NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_server_time` (`server_id`, `created_at`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 文件操作日志表
 CREATE TABLE IF NOT EXISTS `file_logs` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `user_id` BIGINT NOT NULL,
@@ -136,9 +126,8 @@ CREATE TABLE IF NOT EXISTS `file_logs` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_user_id` (`user_id`),
   INDEX `idx_server_id` (`server_id`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 计划任务表
 CREATE TABLE IF NOT EXISTS `scheduled_tasks` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `name` VARCHAR(150) NOT NULL,
@@ -157,9 +146,8 @@ CREATE TABLE IF NOT EXISTS `scheduled_tasks` (
   INDEX `idx_server_id` (`server_id`),
   INDEX `idx_group_id` (`group_id`),
   INDEX `idx_enabled` (`enabled`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 数据库备份配置表
 CREATE TABLE IF NOT EXISTS `db_backup_configs` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `name` VARCHAR(150) NOT NULL,
@@ -177,9 +165,8 @@ CREATE TABLE IF NOT EXISTS `db_backup_configs` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_server_id` (`server_id`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 备份文件表
 CREATE TABLE IF NOT EXISTS `backup_files` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `config_id` BIGINT NULL,
@@ -194,9 +181,8 @@ CREATE TABLE IF NOT EXISTS `backup_files` (
   INDEX `idx_config_id` (`config_id`),
   INDEX `idx_server_id` (`server_id`),
   INDEX `idx_backup_type` (`backup_type`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 配置备份任务表
 CREATE TABLE IF NOT EXISTS `config_backup_tasks` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `name` VARCHAR(150) NOT NULL,
@@ -210,9 +196,8 @@ CREATE TABLE IF NOT EXISTS `config_backup_tasks` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_server_id` (`server_id`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 证书监控表
 CREATE TABLE IF NOT EXISTS `certificates` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `domain` VARCHAR(255) NOT NULL,
@@ -228,9 +213,8 @@ CREATE TABLE IF NOT EXISTS `certificates` (
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_domain` (`domain`),
   INDEX `idx_status` (`status`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 告警规则表
 CREATE TABLE IF NOT EXISTS `alert_rules` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `name` VARCHAR(150) NOT NULL,
@@ -243,9 +227,8 @@ CREATE TABLE IF NOT EXISTS `alert_rules` (
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_type` (`type`),
   INDEX `idx_enabled` (`enabled`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 告警记录表
 CREATE TABLE IF NOT EXISTS `alert_logs` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `server_id` BIGINT NULL,
@@ -260,9 +243,8 @@ CREATE TABLE IF NOT EXISTS `alert_logs` (
   INDEX `idx_server_id` (`server_id`),
   INDEX `idx_rule_id` (`rule_id`),
   INDEX `idx_status` (`status`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 审计日志表
 CREATE TABLE IF NOT EXISTS `audit_logs` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `user_id` BIGINT NULL,
@@ -281,18 +263,16 @@ CREATE TABLE IF NOT EXISTS `audit_logs` (
   INDEX `idx_action` (`action`),
   INDEX `idx_server_id` (`server_id`),
   INDEX `idx_created_at` (`created_at`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 系统设置表
 CREATE TABLE IF NOT EXISTS `settings` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `setting_key` VARCHAR(100) NOT NULL UNIQUE,
   `setting_value` TEXT NULL,
   `description` TEXT NULL,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 服务器状态变更记录表
 CREATE TABLE IF NOT EXISTS `server_status_changes` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `server_id` BIGINT NOT NULL,
@@ -301,4 +281,4 @@ CREATE TABLE IF NOT EXISTS `server_status_changes` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_server_id` (`server_id`),
   INDEX `idx_created_at` (`created_at`)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

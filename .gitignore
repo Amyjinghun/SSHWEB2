@@ -1,0 +1,11 @@
+.env
+.env.docker
+node_modules/
+client/dist/
+server/.env
+
+# 防止旧版本副本被再次提交
+sshweb/
+server/sshweb/
+server/server/
+server/client/
