@@ -46,13 +46,13 @@
 
       <div v-if="offlineCount > 0" class="monitor-collapse-bar">
         <span>{{ offlineBarText }}</span>
-        <el-link type="primary" :underline="false" @click="collapseOffline = !collapseOffline">
+        <el-link type="primary" underline="never" @click="collapseOffline = !collapseOffline">
           {{ collapseOffline ? '展开' : '收起' }}
         </el-link>
       </div>
 
       <div v-if="monitorLoaded && monitorServers.length === 0" class="monitor-empty">
-        暂无服务器，去<el-link type="primary" :underline="false" @click="router.push('/servers')">添加服务器</el-link>
+        暂无服务器，去<el-link type="primary" underline="never" @click="router.push('/servers')">添加服务器</el-link>
       </div>
       <div v-else class="monitor-grid">
         <div
