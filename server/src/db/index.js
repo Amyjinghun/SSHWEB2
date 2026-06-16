@@ -29,6 +29,13 @@ async function ensureSchema() {
   await ignoreDuplicateColumn("ALTER TABLE scheduled_tasks ADD COLUMN target_type ENUM('server','server_list','group') NOT NULL DEFAULT 'server' AFTER name");
   await ignoreDuplicateColumn('ALTER TABLE scheduled_tasks ADD COLUMN server_ids JSON NULL AFTER server_id');
   await ignoreDuplicateColumn('ALTER TABLE scheduled_tasks ADD COLUMN group_id BIGINT NULL AFTER server_ids');
+  // 主页实时监控面板所需的缓存列（避免每 5s 关联 server_metrics 取最新行）
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN uptime VARCHAR(100) NULL AFTER disk_usage');
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN load_avg VARCHAR(100) NULL AFTER uptime');
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN mem_total_mb BIGINT NULL AFTER load_avg');
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN mem_used_mb BIGINT NULL AFTER mem_total_mb');
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN disk_total_mb BIGINT NULL AFTER mem_used_mb');
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN disk_used_mb BIGINT NULL AFTER disk_total_mb');
 }
 
 async function query(sql, params) {

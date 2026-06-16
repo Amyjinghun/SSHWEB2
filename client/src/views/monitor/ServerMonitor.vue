@@ -101,9 +101,12 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { io } from 'socket.io-client'
 import api from '../../api'
 import * as echarts from 'echarts'
+
+const route = useRoute()
 
 const servers = ref([])
 const serverId = ref('')
@@ -135,6 +138,12 @@ const realtimeCards = computed(() => [
 onMounted(async () => {
   const r = await api.get('/api/servers')
   if (r.code === 0) servers.value = r.data
+  // 支持从主页监控卡片深链过来：?id=<serverId>
+  const deepId = route.query.id
+  if (deepId) {
+    serverId.value = Number(deepId)
+    loadHistory()
+  }
 })
 
 onBeforeUnmount(() => {

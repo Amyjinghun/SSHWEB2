@@ -8,6 +8,7 @@ const config = require('./config');
 const { setupSSHTerminal } = require('./websocket/ssh');
 const { setupLogTail } = require('./websocket/log-tail');
 const { setupRealtimeMetrics } = require('./websocket/realtime-metrics');
+const { setupMonitorGrid } = require('./websocket/monitor-grid');
 const { startSchedulers } = require('./scheduler');
 const db = require('./db');
 
@@ -80,6 +81,7 @@ app.use((err, req, res, next) => {
 setupSSHTerminal(io);
 setupLogTail(io);
 setupRealtimeMetrics(io);
+setupMonitorGrid(io);
 
 async function bootstrap() {
   await db.ensureSchema();

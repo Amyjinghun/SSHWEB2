@@ -271,8 +271,8 @@ async function checkOneServer(server) {
     );
 
     await db.update(
-      "UPDATE servers SET status='online', cpu_usage=?, memory_usage=?, disk_usage=?, os_info=COALESCE(?, os_info), last_connected_at=NOW() WHERE id=?",
-      [metrics.cpu, metrics.memUsage, metrics.diskUsage, metrics.osInfo || null, server.id]
+      "UPDATE servers SET status='online', cpu_usage=?, memory_usage=?, disk_usage=?, os_info=COALESCE(?, os_info), uptime=?, load_avg=?, mem_total_mb=?, mem_used_mb=?, disk_total_mb=?, disk_used_mb=?, last_connected_at=NOW() WHERE id=?",
+      [metrics.cpu, metrics.memUsage, metrics.diskUsage, metrics.osInfo || null, metrics.uptime, metrics.loadAvg, metrics.memTotal, metrics.memUsed, metrics.diskTotal, metrics.diskUsed, server.id]
     );
 
     if (server.status !== 'online') {
