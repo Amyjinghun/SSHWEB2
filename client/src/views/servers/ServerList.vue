@@ -78,24 +78,24 @@
         <el-table-column prop="expires_at" label="到期日期" width="120">
           <template #default="{ row }">{{ row.expires_at || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="440" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button-group>
-              <el-button size="small" @click="testConn(row)" :loading="row.testing">测试</el-button>
-              <el-button size="small" @click="refreshMonitor(row)" :loading="row.monitoring">采集</el-button>
+            <div class="row-actions">
               <el-button size="small" type="primary" @click="openTerminal(row)">终端</el-button>
               <el-button size="small" @click="execCmd(row)">执行</el-button>
-              <el-button size="small" @click="$router.push('/servers/edit/' + row.id)">编辑</el-button>
-              <el-dropdown size="small" @command="(m) => renewServer(row, m)" trigger="click">
-                <el-button size="small" type="success">已续费<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+              <el-dropdown size="small" trigger="click">
+                <el-button size="small">更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item v-for="m in 12" :key="m" :command="m">续费 {{ m }} 个月</el-dropdown-item>
+                    <el-dropdown-item @click="testConn(row)">测试连接</el-dropdown-item>
+                    <el-dropdown-item @click="refreshMonitor(row)">采集状态</el-dropdown-item>
+                    <el-dropdown-item @click="$router.push('/servers/edit/' + row.id)">编辑</el-dropdown-item>
+                    <el-dropdown-item v-for="m in 12" :key="m" @click="renewServer(row, m)">续费 {{ m }} 个月</el-dropdown-item>
+                    <el-dropdown-item divided @click="deleteServer(row)">删除</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-button size="small" type="danger" @click="deleteServer(row)">删除</el-button>
-            </el-button-group>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -328,6 +328,7 @@ async function submitImport() {
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; }
 .toolbar-left { display: flex; gap: 12px; flex-wrap: wrap; }
 .toolbar-actions { display: flex; gap: 10px; }
+.row-actions { display: flex; gap: 8px; align-items: center; }
 .list-tip { margin-bottom: 14px; }
 
 .usage-normal { color: #22c55e; font-weight: 600; font-size: 13px; }

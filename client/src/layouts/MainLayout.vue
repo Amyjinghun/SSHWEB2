@@ -22,15 +22,23 @@
           <template #title>首页</template>
         </el-menu-item>
 
+        <el-menu-item index="/servers">
+          <el-icon><Server /></el-icon>
+          <template #title>服务器列表</template>
+        </el-menu-item>
+
+        <el-menu-item index="/terminal">
+          <el-icon><Terminal /></el-icon>
+          <template #title>WebSSH终端</template>
+        </el-menu-item>
+
         <el-sub-menu index="servers">
           <template #title><el-icon><Server /></el-icon><span>服务器管理</span></template>
-          <el-menu-item index="/servers">服务器列表</el-menu-item>
           <el-menu-item index="/groups">分组管理</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="terminal">
           <template #title><el-icon><Terminal /></el-icon><span>终端管理</span></template>
-          <el-menu-item index="/terminal">WebSSH终端</el-menu-item>
           <el-menu-item index="/batch">批量命令</el-menu-item>
           <el-menu-item index="/templates">命令模板</el-menu-item>
           <el-menu-item index="/history">执行历史</el-menu-item>

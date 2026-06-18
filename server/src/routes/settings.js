@@ -47,7 +47,9 @@ const DEFAULT_SETTINGS = {
   alert_template_expiry: '',
   alert_template_expired: '',
   server_check_interval: '180',
-  server_monitor_concurrency: '5'
+  server_monitor_concurrency: '5',
+  public_monitor_enabled: 'false',
+  public_monitor_key: ''
 };
 
 const ALLOWED_SETTING_KEYS = new Set(Object.keys(DEFAULT_SETTINGS));

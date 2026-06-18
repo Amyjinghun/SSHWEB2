@@ -1,17 +1,15 @@
 <template>
-  <div class="page-container">
-    <el-card shadow="hover">
-      <div class="toolbar">
-        <el-select v-model="currentServerId" placeholder="选择服务器" style="width:300px" filterable size="large">
-          <template #prefix><el-icon><Monitor /></el-icon></template>
-          <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
-        </el-select>
-        <div class="toolbar-actions">
-          <el-button type="primary" @click="addTerminal"><el-icon><Plus /></el-icon>打开终端</el-button>
-          <el-button type="danger" @click="closeAll"><el-icon><Close /></el-icon>关闭全部</el-button>
-        </div>
+  <div class="page-container terminal-page">
+    <div class="terminal-toolbar">
+      <el-select v-model="currentServerId" placeholder="选择服务器" class="server-select" filterable size="large">
+        <template #prefix><el-icon><Monitor /></el-icon></template>
+        <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
+      </el-select>
+      <div class="toolbar-actions">
+        <el-button type="primary" @click="addTerminal"><el-icon><Plus /></el-icon>打开终端</el-button>
+        <el-button type="danger" @click="closeAll"><el-icon><Close /></el-icon>关闭全部</el-button>
       </div>
-    </el-card>
+    </div>
 
     <div class="terminals-container">
       <el-tabs v-model="activeTab" type="card" closable @tab-remove="closeTerminal" v-if="terminals.length" class="terminal-tabs">
@@ -152,17 +150,38 @@ function closeAll() {
 </script>
 
 <style scoped>
-.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.toolbar-actions { display: flex; gap: 10px; }
-.terminals-container { margin-top: 16px; }
-.terminal-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
-.terminal-box {
-  height: calc(100vh - 260px);
-  background: #0f172a;
+.terminal-page {
+  min-height: calc(100vh - 56px);
+  display: flex;
+  flex-direction: column;
+}
+.terminal-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #e8ecf4;
   border-radius: 10px;
+}
+.server-select { width: 320px; max-width: 100%; }
+.toolbar-actions { display: flex; gap: 10px; }
+.terminals-container { margin-top: 12px; flex: 1; min-height: 0; }
+.terminal-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
+.terminal-tabs :deep(.el-tabs__content) {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+}
+.terminal-box {
+  height: calc(100vh - 202px);
+  background: #0f172a;
+  border-radius: 0 0 10px 10px;
   overflow: hidden;
   padding: 8px;
-  border: 1px solid #1e293b;
 }
 .term-error { color: #ef4444; padding: 10px 12px; background: rgba(239,68,68,0.06); border-radius: 6px; margin-top: 8px; display: flex; align-items: center; gap: 6px; }
 .empty-state {
@@ -170,11 +189,17 @@ function closeAll() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: calc(100vh - 260px);
+  height: calc(100vh - 202px);
   color: #94a3b8;
   background: #f8fafc;
   border-radius: 12px;
   border: 2px dashed #e2e8f0;
   p { margin-top: 12px; font-size: 15px; }
+}
+@media (max-width: 768px) {
+  .terminal-toolbar { align-items: stretch; flex-direction: column; }
+  .server-select { width: 100%; }
+  .toolbar-actions { width: 100%; }
+  .toolbar-actions .el-button { flex: 1; }
 }
 </style>

@@ -180,6 +180,8 @@ INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`, `description`) VA
 ('command_exec_timeout', '60000', '命令执行超时(毫秒)'),
 ('server_check_interval', '180', '服务器状态检测间隔(秒)'),
 ('server_monitor_concurrency', '5', '服务器状态检测并发数'),
+('public_monitor_enabled', 'false', '是否启用公开只读监控页'),
+('public_monitor_key', '', '公开只读监控页分享密钥'),
 ('login_fail_limit', '5', '登录失败次数限制'),
 ('login_lock_time', '300', '登录失败锁定时间(秒)'),
 ('jwt_expires_in', '7d', 'Token有效期'),

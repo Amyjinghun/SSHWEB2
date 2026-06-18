@@ -16,6 +16,32 @@
             <el-form-item label="状态检测并发数"><el-input-number v-model="settings.server_monitor_concurrency" :min="1" :max="30" /></el-form-item>
           </el-form>
         </el-tab-pane>
+        <el-tab-pane label="公开监控">
+          <el-form :model="settings" label-width="160px" style="max-width:760px">
+            <el-alert
+              title="公开监控页无需登录即可查看，只展示脱敏后的实时状态，不包含 SSH 用户名、IP、端口和凭据。"
+              type="warning"
+              show-icon
+              :closable="false"
+              class="setting-alert"
+            />
+            <el-form-item label="启用公开监控">
+              <el-switch v-model="settings.public_monitor_enabled" active-value="true" inactive-value="false" />
+            </el-form-item>
+            <el-form-item label="分享密钥">
+              <div class="public-key-row">
+                <el-input v-model="settings.public_monitor_key" placeholder="点击生成分享密钥" />
+                <el-button @click="generatePublicMonitorKey">生成</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item label="公开访问地址">
+              <div class="public-key-row">
+                <el-input :model-value="publicMonitorUrl" readonly placeholder="保存设置后生效" />
+                <el-button @click="copyPublicMonitorUrl" :disabled="!publicMonitorUrl">复制</el-button>
+              </div>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
         <el-tab-pane label="安全设置">
           <el-form :model="settings" label-width="160px" style="max-width:600px">
             <el-form-item label="登录失败次数限制"><el-input-number v-model="settings.login_fail_limit" :min="3" :max="20" /></el-form-item>
@@ -44,12 +70,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import api from '../../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 const settings = ref({})
 const cleanupForm = ref({ audit_days: 90, command_log_days: 90, alert_days: 90 })
 const saving = ref(false)
+const publicMonitorUrl = computed(() => {
+  const key = String(settings.value.public_monitor_key || '').trim()
+  if (!key) return ''
+  return `${window.location.origin}/public/monitor/${key}`
+})
 
 onMounted(async () => {
   const res = await api.get('/api/settings')
@@ -63,6 +94,17 @@ async function saveSettings() {
   if (res.code === 0) ElMessage.success('设置已保存')
 }
 
+function generatePublicMonitorKey() {
+  const bytes = new Uint8Array(24)
+  window.crypto.getRandomValues(bytes)
+  settings.value.public_monitor_key = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function copyPublicMonitorUrl() {
+  if (!publicMonitorUrl.value) return
+  await navigator.clipboard.writeText(publicMonitorUrl.value)
+  ElMessage.success('公开访问地址已复制')
+}
 
 async function doCleanup() {
   await ElMessageBox.confirm('确定执行数据清理？此操作不可恢复', '确认', { type: 'warning' })
@@ -73,4 +115,14 @@ async function doCleanup() {
 
 <style scoped>
 .card-title { font-weight: 600; color: #1e293b; font-size: 16px; }
+.setting-alert { margin-bottom: 16px; }
+.public-key-row {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+}
+.public-key-row .el-input { flex: 1; }
+@media (max-width: 768px) {
+  .public-key-row { flex-direction: column; }
+}
 </style>

@@ -7,6 +7,12 @@ const routes = [
     component: () => import('../views/Login.vue')
   },
   {
+    path: '/public/monitor/:shareKey',
+    name: 'PublicMonitor',
+    component: () => import('../views/PublicMonitor.vue'),
+    meta: { public: true }
+  },
+  {
     path: '/',
     component: () => import('../layouts/MainLayout.vue'),
     redirect: '/dashboard',
@@ -47,7 +53,9 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
-  if (to.path !== '/login' && !token) {
+  if (to.meta.public) {
+    next()
+  } else if (to.path !== '/login' && !token) {
     next('/login')
   } else if (to.path === '/login' && token) {
     next('/dashboard')
