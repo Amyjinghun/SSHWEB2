@@ -22,6 +22,7 @@ const routes = [
       { path: 'servers/add', name: 'ServerAdd', component: () => import('../views/servers/ServerForm.vue'), meta: { title: '添加服务器' } },
       { path: 'servers/edit/:id', name: 'ServerEdit', component: () => import('../views/servers/ServerForm.vue'), meta: { title: '编辑服务器' } },
       { path: 'groups', name: 'Groups', component: () => import('../views/servers/GroupManage.vue'), meta: { title: '分组管理' } },
+      { path: 'software-installer', name: 'SoftwareInstaller', component: () => import('../views/servers/SoftwareInstaller.vue'), meta: { title: '软件安装' } },
       { path: 'terminal', name: 'Terminal', component: () => import('../views/terminal/WebSSH.vue'), meta: { title: 'WebSSH终端' } },
       { path: 'batch', name: 'BatchExec', component: () => import('../views/terminal/BatchExec.vue'), meta: { title: '批量命令' } },
       { path: 'templates', name: 'Templates', component: () => import('../views/terminal/CommandTemplates.vue'), meta: { title: '命令模板' } },
@@ -40,6 +41,7 @@ const routes = [
       { path: 'alerts', name: 'Alerts', component: () => import('../views/security/AlertCenter.vue'), meta: { title: '告警中心' } },
       { path: 'notifications', name: 'Notifications', component: () => import('../views/security/NotificationSettings.vue'), meta: { title: '告警通知' } },
       { path: 'audit', name: 'Audit', component: () => import('../views/security/AuditLog.vue'), meta: { title: '审计日志' } },
+      { path: 'connection-logs', name: 'ConnectionLogs', component: () => import('../views/security/ConnectionLog.vue'), meta: { title: '连接日志' } },
       { path: 'users', name: 'Users', component: () => import('../views/system/UserManage.vue'), meta: { title: '用户管理' } },
       { path: 'settings', name: 'Settings', component: () => import('../views/system/SystemSettings.vue'), meta: { title: '系统设置' } },
     ]

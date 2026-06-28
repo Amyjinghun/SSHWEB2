@@ -1,6 +1,7 @@
 const { Client } = require('ssh2');
 const config = require('../config');
 const { decrypt } = require('../utils/crypto');
+const { logSSH } = require('../utils/ssh-diag-log');
 
 const DANGEROUS_PATTERNS = [
   // 破坏性删除/格式化/磁盘覆盖
@@ -42,6 +43,21 @@ function safeDecrypt(value) {
   try { return decrypt(value); } catch (err) { throw new Error('凭据解密失败，请检查加密密钥 ENCRYPTION_KEY 是否与保存服务器时一致'); }
 }
 
+function normalizeAuthType(value) {
+  const raw = String(value || 'password').trim();
+  const map = {
+    '密码': 'password',
+    '私钥': 'private_key',
+    '密码+私钥': 'password_private_key',
+    '密码私钥': 'password_private_key',
+    password: 'password',
+    private_key: 'private_key',
+    key: 'private_key',
+    password_private_key: 'password_private_key'
+  };
+  return map[raw] || 'password';
+}
+
 function normalizeSSHConfig(serverInfo = {}) {
   let host = String(serverInfo.host || '').trim();
   let port = Number(serverInfo.port) || 22;
@@ -57,7 +73,7 @@ function normalizeSSHConfig(serverInfo = {}) {
   if (!host) throw new Error('主机地址不能为空');
   if (!username) throw new Error('SSH 用户名不能为空');
 
-  const authType = serverInfo.auth_type || serverInfo.authType || 'password';
+  const authType = normalizeAuthType(serverInfo.auth_type || serverInfo.authType);
   const passwordEncrypted = serverInfo.password_encrypted || serverInfo.password;
   const privateKeyEncrypted = serverInfo.private_key_encrypted || serverInfo.private_key || serverInfo.privateKey;
   const passphraseEncrypted = serverInfo.private_key_passphrase_encrypted || serverInfo.private_key_passphrase || serverInfo.privateKeyPassphrase;
@@ -104,11 +120,17 @@ function formatSSHError(err) {
 }
 
 function createSSHConnection(serverInfo) {
+  const tag = `${serverInfo.id || '?'}@${serverInfo.host}:${serverInfo.port}`;
+  const start = Date.now();
+  let handshakeDone = false;
+  logSSH(tag, 'SSH连接开始', `user=${serverInfo.username} auth=${serverInfo.auth_type}`);
   return new Promise((resolve, reject) => {
     let connectConfig;
     try {
       connectConfig = normalizeSSHConfig(serverInfo);
+      logSSH(tag, '配置就绪', `host=${connectConfig.host} port=${connectConfig.port} user=${connectConfig.username} 有密码=${connectConfig.password ? '是' : '否'} 有私钥=${connectConfig.privateKey ? '是' : '否'} 超时=${connectConfig.readyTimeout}ms`);
     } catch (err) {
+      logSSH(tag, '配置阶段失败', err.message);
       return reject(err);
     }
 
@@ -122,16 +144,35 @@ function createSSHConnection(serverInfo) {
     };
 
     const timeout = setTimeout(() => {
+      logSSH(tag, '整体超时', `耗时=${Date.now() - start}ms 握手=${handshakeDone ? '已' : '未'}完成`);
       try { conn.end(); } catch {}
       finish(reject, new Error('连接超时'));
     }, config.ssh.connectTimeout + 1000);
 
-    conn.on('ready', () => finish(resolve, conn));
+    conn.on('handshake', () => {
+      handshakeDone = true;
+      logSSH(tag, 'SSH握手完成', `耗时=${Date.now() - start}ms（TCP已通，进入认证阶段）`);
+    });
+    conn.on('banner', (msg) => {
+      logSSH(tag, '收到服务器banner', String(msg).replace(/[\r\n]+/g, ' ').slice(0, 100));
+    });
     conn.on('keyboard-interactive', (name, instructions, lang, prompts, finishAuth) => {
+      logSSH(tag, '键盘交互认证', `prompts=${prompts.length}`);
       const password = connectConfig.password || '';
       finishAuth(prompts.map(() => password));
     });
-    conn.on('error', (err) => finish(reject, new Error(formatSSHError(err))));
+    conn.on('ready', () => {
+      logSSH(tag, '连接成功(认证通过)', `总耗时=${Date.now() - start}ms`);
+      finish(resolve, conn);
+    });
+    conn.on('error', (err) => {
+      logSSH(tag, '连接错误', `code=${err.code || '-'} 握手=${handshakeDone ? '已' : '未'}完成 耗时=${Date.now() - start}ms msg=${err.message}`);
+      finish(reject, new Error(formatSSHError(err)));
+    });
+    conn.on('close', () => {
+      logSSH(tag, '连接关闭', `握手=${handshakeDone ? '已' : '未'}完成 耗时=${Date.now() - start}ms`);
+    });
+    logSSH(tag, '发起TCP+SSH连接', `${connectConfig.host}:${connectConfig.port}`);
     conn.connect(connectConfig);
   });
 }

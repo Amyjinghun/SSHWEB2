@@ -12,7 +12,16 @@
             <el-form-item label="终端字体大小"><el-input-number v-model="settings.terminal_font_size" :min="10" :max="24" /></el-form-item>
             <el-form-item label="SSH连接超时(ms)"><el-input-number v-model="settings.ssh_connect_timeout" :min="5000" :max="60000" :step="1000" /></el-form-item>
             <el-form-item label="命令执行超时(ms)"><el-input-number v-model="settings.command_exec_timeout" :min="10000" :max="300000" :step="10000" /></el-form-item>
-            <el-form-item label="状态检测间隔(秒)"><el-input-number v-model="settings.server_check_interval" :min="60" :max="3600" /></el-form-item>
+            <el-form-item label="监控采集模式">
+              <el-radio-group v-model="settings.server_monitor_mode" @change="applyMonitorMode">
+                <el-radio-button label="realtime">实时模式</el-radio-button>
+                <el-radio-button label="normal">常规模式</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="状态检测间隔(秒)">
+              <el-input-number v-model="settings.server_check_interval" :min="monitorIntervalMin" :max="monitorIntervalMax" />
+              <span class="setting-hint">{{ monitorIntervalHint }}</span>
+            </el-form-item>
             <el-form-item label="状态检测并发数"><el-input-number v-model="settings.server_monitor_concurrency" :min="1" :max="30" /></el-form-item>
           </el-form>
         </el-tab-pane>
@@ -81,6 +90,13 @@ const publicMonitorUrl = computed(() => {
   if (!key) return ''
   return `${window.location.origin}/public/monitor/${key}`
 })
+const monitorIntervalMin = computed(() => settings.value.server_monitor_mode === 'normal' ? 120 : 5)
+const monitorIntervalMax = computed(() => settings.value.server_monitor_mode === 'normal' ? 180 : 60)
+const monitorIntervalHint = computed(() => (
+  settings.value.server_monitor_mode === 'normal'
+    ? '常规模式建议 120-180 秒，压力更低'
+    : '实时模式建议 5-10 秒，服务器多时可调高'
+))
 
 onMounted(async () => {
   const res = await api.get('/api/settings')
@@ -92,6 +108,10 @@ async function saveSettings() {
   const res = await api.put('/api/settings', settings.value)
   saving.value = false
   if (res.code === 0) ElMessage.success('设置已保存')
+}
+
+function applyMonitorMode(mode) {
+  settings.value.server_check_interval = mode === 'normal' ? 180 : 10
 }
 
 function generatePublicMonitorKey() {

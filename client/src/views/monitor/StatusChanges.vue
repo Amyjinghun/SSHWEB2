@@ -1,13 +1,13 @@
 <template>
-  <div class="page-container">
-    <el-card shadow="hover">
+  <div class="page-container status-page">
+    <el-card shadow="hover" class="status-card">
       <div class="toolbar">
         <div class="toolbar-left">
-          <el-select v-model="filters.server_id" placeholder="全部服务器" clearable @change="loadData">
+          <el-select v-model="filters.server_id" placeholder="全部服务器" clearable class="filter-select server-filter" @change="loadData">
             <template #prefix><el-icon><Monitor /></el-icon></template>
             <el-option v-for="s in servers" :key="s.id" :label="s.name" :value="s.id" />
           </el-select>
-          <el-select v-model="filters.new_status" placeholder="全部状态" clearable @change="loadData">
+          <el-select v-model="filters.new_status" placeholder="全部状态" clearable class="filter-select" @change="loadData">
             <el-option label="上线" value="online" />
             <el-option label="离线" value="offline" />
           </el-select>
@@ -15,11 +15,11 @@
         <el-button @click="loadData"><el-icon><Refresh /></el-icon>刷新</el-button>
       </div>
 
-      <el-table :data="list" stripe v-loading="loading">
-        <el-table-column prop="server_name" label="服务器" width="180">
+      <el-table :data="list" stripe v-loading="loading" class="status-table">
+        <el-table-column prop="server_name" label="服务器" min-width="220">
           <template #default="{ row }">{{ row.server_name || `#${row.server_id}` }}</template>
         </el-table-column>
-        <el-table-column prop="old_status" label="原状态" width="120">
+        <el-table-column prop="old_status" label="原状态" min-width="120">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.old_status)" size="small" effect="plain">{{ statusLabel(row.old_status) }}</el-tag>
           </template>
@@ -31,12 +31,13 @@
             </el-icon>
           </template>
         </el-table-column>
-        <el-table-column prop="new_status" label="新状态" width="120">
+        <el-table-column prop="new_status" label="新状态" min-width="120">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.new_status)" size="small" effect="dark">{{ statusLabel(row.new_status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="变更时间" width="180" />
+        <el-table-column prop="created_at" label="变更时间" min-width="220" />
+        <el-table-column min-width="1" />
       </el-table>
 
       <el-pagination
@@ -106,6 +107,36 @@ function statusLabel(status) {
 </script>
 
 <style scoped>
-.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
-.toolbar-left { display: flex; gap: 8px; flex-wrap: wrap; }
+.status-page {
+  min-height: calc(100vh - 56px);
+}
+.status-card {
+  min-height: calc(100vh - 112px);
+}
+.status-card :deep(.el-card__body) {
+  display: flex;
+  min-height: calc(100vh - 112px);
+  flex-direction: column;
+}
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.toolbar-left { display: flex; gap: 10px; flex-wrap: wrap; }
+.filter-select { width: 150px; }
+.server-filter { width: 260px; }
+.status-table {
+  width: 100%;
+  flex: 1;
+}
+@media (max-width: 768px) {
+  .toolbar { align-items: stretch; flex-direction: column; }
+  .toolbar-left { width: 100%; flex-direction: column; }
+  .filter-select,
+  .server-filter { width: 100%; }
+}
 </style>

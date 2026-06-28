@@ -31,6 +31,7 @@ function setupMonitorGrid(io) {
     return db.query(
       `SELECT s.id, s.name, s.host, s.status, s.cpu_usage, s.memory_usage, s.disk_usage,
               s.os_info, s.uptime, s.load_avg, s.mem_total_mb, s.mem_used_mb, s.disk_total_mb, s.disk_used_mb,
+              s.network_rx_bytes, s.network_tx_bytes,
               s.last_connected_at, s.group_id, g.name AS group_name
        FROM servers s
        LEFT JOIN server_groups g ON s.group_id = g.id

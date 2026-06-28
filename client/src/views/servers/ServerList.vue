@@ -17,14 +17,14 @@
         </div>
         <div class="toolbar-actions">
           <el-button @click="showImportDialog = true"><el-icon><Upload /></el-icon>导入配置</el-button>
-          <el-dropdown split-button type="success" @click="exportServers('csv')" @command="exportServers">
+          <el-dropdown split-button type="success" @click="exportServers('json:credentials')" @command="exportServers">
             <el-icon><Download /></el-icon>导出配置
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="csv">导出 CSV（不含明文凭据）</el-dropdown-item>
-                <el-dropdown-item command="json">导出 JSON（不含明文凭据）</el-dropdown-item>
-                <el-dropdown-item divided command="csv:credentials">导出 CSV（含明文凭据，仅超级管理员）</el-dropdown-item>
-                <el-dropdown-item command="json:credentials">导出 JSON（含明文凭据，仅超级管理员）</el-dropdown-item>
+                <el-dropdown-item command="json:credentials">导出 JSON 迁移包（含密码）</el-dropdown-item>
+                <el-dropdown-item command="csv:credentials">导出 CSV 迁移包（含密码）</el-dropdown-item>
+                <el-dropdown-item divided command="json">导出 JSON（不含密码）</el-dropdown-item>
+                <el-dropdown-item command="csv">导出 CSV（不含密码）</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -155,6 +155,7 @@ name,host,port,username,auth_type,password,group_name,tags,expires_at,remark
         <pre class="output-box">{{ execResult.stdout || execResult.stderr || execResult.message }}</pre>
       </div>
     </el-dialog>
+
   </div>
 </template>
 
@@ -221,7 +222,20 @@ async function testConn(row) {
   const res = await api.post(`/api/servers/${row.id}/test`)
   row.testing = false
   if (res.code === 0) { ElMessage.success('连接成功'); loadData() }
-  else ElMessage.error(res.message)
+  else {
+    const d = res.data?.diagnostics
+    const lines = [
+      res.message,
+      d?.target ? `目标：${d.target}` : '',
+      d?.tcp ? `TCP：${d.tcp.ok ? '成功' : '失败'} - ${d.tcp.message}` : '',
+      d?.ssh ? `SSH：${d.ssh.ok ? '成功' : '失败'} - ${d.ssh.message}` : ''
+    ].filter(Boolean)
+    if (d?.steps?.length) {
+      lines.push('—— 连接步骤 ——')
+      d.steps.forEach(s => lines.push(`· ${s.step}${s.detail ? '：' + s.detail : ''}`))
+    }
+    ElMessageBox.alert(lines.join('\n'), '测试连接失败', { type: 'error' })
+  }
 }
 
 async function refreshMonitor(row) {
@@ -274,25 +288,25 @@ function buildServerQuery() {
   return query
 }
 
-async function exportServers(command = 'csv') {
+async function exportServers(command = 'json:credentials') {
   const selectedText = selectedServers.value.length ? `已选 ${selectedServers.value.length} 台` : '当前筛选结果'
   const [format, mode] = String(command || 'csv').split(':')
   const includeCredentials = mode === 'credentials'
   try {
     if (includeCredentials) {
       await ElMessageBox.confirm(
-        `即将导出${selectedText}的服务器配置，文件将包含 SSH 密码、私钥、私钥密码等明文敏感信息。该操作仅超级管理员可用，下载后务必妥善保存。`,
-        '确认导出明文凭据',
-        { type: 'warning', confirmButtonText: '确认导出', cancelButtonText: '取消' }
+        `即将导出${selectedText}的完整服务器配置，文件会包含 SSH 密码、私钥、私钥密码等明文敏感信息，可用于新服务器直接导入恢复。下载后请妥善保存，不要发给无关人员。`,
+        '确认导出完整配置',
+        { type: 'warning', confirmButtonText: '导出完整配置', cancelButtonText: '取消' }
       )
     }
     const query = buildServerQuery()
     query.set('format', format === 'json' ? 'json' : 'csv')
     if (includeCredentials) query.set('include_credentials', '1')
-    ElMessage.info(`正在导出${selectedText}的服务器配置${includeCredentials ? '（含明文凭据）' : '（不含明文凭据）'}`)
+    ElMessage.info(`正在导出${selectedText}的服务器配置${includeCredentials ? '（含密码）' : '（不含密码）'}`)
     const blob = await api.get(`/api/servers/export?${query.toString()}`, { responseType: 'blob' })
     const ext = format === 'json' ? 'json' : 'csv'
-    saveBlob(blob, `servers_export.${ext}`)
+    saveBlob(blob, includeCredentials ? `servers_migration.${ext}` : `servers_export.${ext}`)
   } catch (e) {
     // 用户取消导出
   }

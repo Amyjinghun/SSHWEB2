@@ -1,30 +1,28 @@
 <template>
-  <div class="page-container">
-    <el-card shadow="hover">
-      <div class="toolbar">
-        <el-select v-model="serverId" placeholder="选择服务器" filterable style="width:300px" @change="onServerChange">
-          <template #prefix><el-icon><Monitor /></el-icon></template>
-          <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
-        </el-select>
-        <div class="toolbar-right">
-          <el-input v-model="logPath" placeholder="日志文件路径" style="width:360px" clearable>
-            <template #prepend>文件路径</template>
-          </el-input>
-          <el-dropdown trigger="click" @command="quickPath">
-            <el-button>常用日志<el-icon><ArrowDown /></el-icon></el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item v-for="p in commonLogs" :key="p.path" :command="p.path">{{ p.label }}</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-button type="primary" @click="startTail" :disabled="!serverId || !logPath || connected">开始监听</el-button>
-          <el-button type="danger" @click="stopTail" :disabled="!connected">停止</el-button>
-        </div>
+  <div class="page-container log-page">
+    <div class="log-toolbar">
+      <el-select v-model="serverId" placeholder="选择服务器" filterable class="server-select" @change="onServerChange">
+        <template #prefix><el-icon><Monitor /></el-icon></template>
+        <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
+      </el-select>
+      <div class="toolbar-right">
+        <el-input v-model="logPath" placeholder="日志文件路径" class="path-input" clearable>
+          <template #prepend>文件路径</template>
+        </el-input>
+        <el-dropdown trigger="click" @command="quickPath">
+          <el-button>常用日志<el-icon><ArrowDown /></el-icon></el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="p in commonLogs" :key="p.path" :command="p.path">{{ p.label }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button type="primary" @click="startTail" :disabled="!serverId || !logPath || connected">开始监听</el-button>
+        <el-button type="danger" @click="stopTail" :disabled="!connected">停止</el-button>
       </div>
-    </el-card>
+    </div>
 
-    <div class="log-container">
+    <div class="log-container" :class="{ connected }">
       <div v-if="connected" class="log-status-bar">
         <span class="status-dot online"></span>
         <span>实时监听中: {{ logPath }}</span>
@@ -98,6 +96,7 @@ function startTail() {
     scrollback: 10000
   })
   fitAddon = new FitAddon()
+  terminal.loadAddon(fitAddon)
   terminal.open(terminalEl.value)
   fitAddon.fit()
 
@@ -145,9 +144,32 @@ function stopTail() {
 </script>
 
 <style scoped>
-.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.log-page {
+  height: calc(100vh - 56px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.log-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #e8ecf4;
+  border-radius: 10px;
+}
+.server-select { width: 320px; max-width: 100%; }
 .toolbar-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.log-container { margin-top: 16px; position: relative; }
+.path-input { width: min(460px, 38vw); }
+.log-container {
+  margin-top: 12px;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
 .log-status-bar {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 14px; background: #1e293b; color: #94a3b8; font-size: 13px;
@@ -157,13 +179,31 @@ function stopTail() {
 .status-dot.online { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
 .line-count { margin-left: auto; color: #64748b; }
 .log-terminal {
-  height: calc(100vh - 280px); min-height: 300px;
+  height: 100%;
+  min-height: 0;
   background: #0f172a; border-radius: 0 0 10px 10px;
   padding: 8px; overflow: hidden;
 }
+.log-container.connected .log-terminal {
+  height: calc(100% - 37px);
+}
+.log-container:not(.connected) .log-terminal {
+  border-radius: 10px;
+}
 .empty-state {
+  position: absolute;
+  inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  height: calc(100vh - 280px); min-height: 300px;
   color: #94a3b8; background: #f8fafc; border-radius: 10px; border: 2px dashed #e2e8f0; p { margin-top: 12px; }
+}
+@media (max-width: 1100px) {
+  .log-toolbar { align-items: stretch; flex-direction: column; }
+  .server-select,
+  .path-input { width: 100%; }
+  .toolbar-right { width: 100%; }
+}
+@media (max-width: 768px) {
+  .toolbar-right { align-items: stretch; flex-direction: column; }
+  .toolbar-right .el-button { width: 100%; }
 }
 </style>

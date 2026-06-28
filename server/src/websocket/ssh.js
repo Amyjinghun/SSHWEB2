@@ -5,6 +5,15 @@ const { normalizeSSHConfig, formatSSHError } = require('../ssh/connection');
 const { writeAuditLog } = require('../utils/audit');
 const db = require('../db');
 
+function describeConnectionTarget(server, connectConfig) {
+  const authType = server?.auth_type || 'password';
+  const credential = [
+    server?.password_encrypted ? '密码' : '',
+    server?.private_key_encrypted ? '私钥' : ''
+  ].filter(Boolean).join('+') || '无';
+  return `面板实际连接 ${connectConfig.host}:${connectConfig.port}，用户 ${connectConfig.username}，认证 ${authType}，已保存凭据 ${credential}`;
+}
+
 function setupSSHTerminal(io) {
   const nsp = io.of('/ssh');
 
@@ -42,6 +51,7 @@ function setupSSHTerminal(io) {
     }
 
     socket.on('open', async (serverId) => {
+      let connectionDetail = '';
       try {
         await closeSSH();
         const server = await db.queryOne('SELECT * FROM servers WHERE id = ?', [serverId]);
@@ -51,6 +61,7 @@ function setupSSHTerminal(io) {
         }
 
         const connectConfig = normalizeSSHConfig(server);
+        connectionDetail = describeConnectionTarget(server, connectConfig);
         conn = new Client();
 
         conn.on('ready', async () => {
@@ -101,12 +112,13 @@ function setupSSHTerminal(io) {
               errorMessage: message
             });
           } catch {}
-          socket.emit('error', message);
+          socket.emit('error', `${message}（${connectionDetail}）`);
         });
 
         conn.connect(connectConfig);
       } catch (err) {
-        socket.emit('error', formatSSHError(err));
+        const message = formatSSHError(err);
+        socket.emit('error', connectionDetail ? `${message}（${connectionDetail}）` : message);
       }
     });
 

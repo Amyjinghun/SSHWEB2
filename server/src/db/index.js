@@ -36,6 +36,10 @@ async function ensureSchema() {
   await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN mem_used_mb BIGINT NULL AFTER mem_total_mb');
   await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN disk_total_mb BIGINT NULL AFTER mem_used_mb');
   await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN disk_used_mb BIGINT NULL AFTER disk_total_mb');
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN network_rx_bytes BIGINT NULL AFTER disk_used_mb');
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN network_tx_bytes BIGINT NULL AFTER network_rx_bytes');
+  await ignoreDuplicateColumn('ALTER TABLE server_metrics ADD COLUMN network_rx_bytes BIGINT NULL AFTER disk_usage');
+  await ignoreDuplicateColumn('ALTER TABLE server_metrics ADD COLUMN network_tx_bytes BIGINT NULL AFTER network_rx_bytes');
 }
 
 async function query(sql, params) {

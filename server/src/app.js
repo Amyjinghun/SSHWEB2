@@ -25,10 +25,19 @@ process.on('uncaughtException', (err) => {
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: config.cors });
+const buildVersion = `sshweb-${Date.now()}`;
 
 app.set('trust proxy', 1);
 
 app.use(cors(config.cors));
+app.use((req, res, next) => {
+  if (req.path === '/' || req.path.endsWith('.html') || req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -39,6 +48,9 @@ if (fs.existsSync(distPath)) {
 }
 
 // API 路由
+app.get('/api/version', (req, res) => {
+  res.json({ code: 0, data: { version: buildVersion, started_at: new Date(Number(buildVersion.split('-')[1])).toISOString() } });
+});
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/servers', require('./routes/servers'));

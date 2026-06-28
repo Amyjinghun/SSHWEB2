@@ -1,314 +1,555 @@
 <template>
-  <div class="page-container">
-    <el-card shadow="hover">
-      <div class="toolbar">
-        <el-select v-model="serverId" placeholder="选择服务器" filterable style="width:300px" @change="onServerChange">
-          <template #prefix><el-icon><Monitor /></el-icon></template>
-          <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
+  <div class="page-container monitor-page">
+    <el-card shadow="hover" class="monitor-card">
+      <div class="monitor-header">
+        <div>
+          <div class="page-title">资源监控</div>
+          <div class="page-desc">统一查看全部服务器的准实时资源快照，数据由后端定时采集并缓存</div>
+        </div>
+        <div class="monitor-state">
+          <span class="state-dot" :class="{ online: connected }"></span>
+          <span>{{ connected ? '实时推送中' : '连接中' }}</span>
+          <em>更新 {{ updatedText }}</em>
+        </div>
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-item">
+          <span>服务器</span>
+          <strong>{{ summary.total }}</strong>
+        </div>
+        <div class="summary-item success">
+          <span>在线</span>
+          <strong>{{ summary.online }}</strong>
+        </div>
+        <div class="summary-item muted">
+          <span>离线</span>
+          <strong>{{ summary.offline }}</strong>
+        </div>
+        <div class="summary-item danger">
+          <span>高负载</span>
+          <strong>{{ summary.critical }}</strong>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <el-select v-model="groupFilter" placeholder="全部分组" clearable>
+          <el-option label="全部分组" value="" />
+          <el-option v-for="group in groups" :key="group.id" :label="group.name" :value="group.id" />
         </el-select>
-        <div class="toolbar-right">
-          <template v-if="serverId">
-            <el-button v-if="!rtConnected" type="success" @click="startRealtime"><el-icon><VideoPlay /></el-icon>开启实时</el-button>
-            <el-button v-else type="danger" @click="stopRealtime"><el-icon><VideoPause /></el-icon>停止实时</el-button>
-          </template>
-          <el-button @click="loadHistory"><el-icon><Refresh /></el-icon>刷新历史</el-button>
-        </div>
+        <el-input v-model="keyword" placeholder="搜索服务器/系统版本" clearable />
+        <el-select v-model="statusFilter" placeholder="全部状态" clearable>
+          <el-option label="全部状态" value="" />
+          <el-option label="在线" value="online" />
+          <el-option label="离线" value="offline" />
+          <el-option label="未知" value="unknown" />
+        </el-select>
+        <el-select v-model="sortBy" placeholder="排序">
+          <el-option label="默认排序" value="default" />
+          <el-option label="CPU 高到低" value="cpu" />
+          <el-option label="内存 高到低" value="memory" />
+          <el-option label="磁盘 高到低" value="disk" />
+          <el-option label="告警优先" value="health" />
+        </el-select>
       </div>
 
-      <div v-if="!serverId" class="empty-state">
-        <el-icon :size="48" color="#cbd5e1"><DataLine /></el-icon>
-        <p>请选择服务器查看监控</p>
+      <el-alert
+        v-if="!connected && loaded"
+        title="实时连接暂未建立，页面会在连接恢复后自动刷新快照。"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="monitor-alert"
+      />
+
+      <div v-if="loaded && !filteredServers.length" class="empty-state">
+        暂无符合条件的服务器
       </div>
 
-      <template v-else>
-        <!-- 实时状态面板 -->
-        <div class="realtime-panel" v-if="rtConnected || rtData.cpu !== null">
-          <div class="rt-status-bar">
-            <span class="status-dot" :class="rtConnected ? 'online' : 'offline'"></span>
-            <span>{{ rtConnected ? '实时采集中 (每3秒)' : '已停止' }}</span>
+      <div v-else class="server-grid">
+        <div
+          v-for="server in filteredServers"
+          :key="server.id"
+          class="server-card"
+          :class="cardHealth(server).className"
+          :style="{ '--health-color': cardHealth(server).color }"
+        >
+          <div class="server-head">
+            <div class="server-title">
+              <strong :title="server.name">{{ server.name }}</strong>
+              <span v-if="server.group_name">{{ server.group_name }}</span>
+            </div>
+            <div class="server-status" :class="server.status">
+              <i></i>{{ statusText(server.status) }}
+            </div>
           </div>
-          <el-row :gutter="16">
-            <el-col :span="6" v-for="item in realtimeCards" :key="item.label">
-              <div class="rt-card" :style="{ borderTop: `3px solid ${item.color}` }">
-                <div class="rt-label">{{ item.label }}</div>
-                <div class="rt-value" :style="{ color: item.color }">{{ item.value }}</div>
-                <div class="rt-sub">{{ item.sub }}</div>
-              </div>
-            </el-col>
-          </el-row>
-          <div ref="rtChartRef" style="height:200px;margin-top:12px"></div>
+
+          <div class="server-meta">
+            <span :title="server.host">{{ server.host || '-' }}</span>
+            <span :title="server.os_info">{{ server.os_info || '-' }}</span>
+          </div>
+
+          <div class="metric-row">
+            <div class="metric-label"><span>CPU</span><strong>{{ pct(server.cpu_usage) }}%</strong></div>
+            <div class="metric-bar"><div :style="{ width: pct(server.cpu_usage) + '%', background: usageColor(server.cpu_usage) }"></div></div>
+          </div>
+          <div class="metric-row">
+            <div class="metric-label">
+              <span>内存</span>
+              <strong>{{ pct(server.memory_usage) }}% <em>{{ mb(server.mem_used_mb) }} / {{ mb(server.mem_total_mb) }}</em></strong>
+            </div>
+            <div class="metric-bar"><div :style="{ width: pct(server.memory_usage) + '%', background: usageColor(server.memory_usage) }"></div></div>
+          </div>
+          <div class="metric-row">
+            <div class="metric-label">
+              <span>磁盘</span>
+              <strong>{{ pct(server.disk_usage) }}% <em>{{ mb(server.disk_used_mb) }} / {{ mb(server.disk_total_mb) }}</em></strong>
+            </div>
+            <div class="metric-bar"><div :style="{ width: pct(server.disk_usage) + '%', background: usageColor(server.disk_usage) }"></div></div>
+          </div>
+
+          <div class="server-foot">
+            <span>负载 {{ server.load_avg || '-' }}</span>
+            <span :title="server.uptime || ''">{{ server.uptime || '-' }}</span>
+          </div>
+          <div class="network-row">
+            <span>下行 {{ bytes(server.network_rx_bytes) }}</span>
+            <span>上行 {{ bytes(server.network_tx_bytes) }}</span>
+          </div>
+          <div class="fresh-row">最后连接 {{ formatTime(server.last_connected_at) }}</div>
         </div>
-
-        <!-- 历史曲线 -->
-        <el-divider content-position="left">
-          <span class="divider-text">历史趋势</span>
-          <el-radio-group v-model="timeRange" @change="loadHistory" size="small" style="margin-left:12px">
-            <el-radio-button value="1">1小时</el-radio-button>
-            <el-radio-button value="6">6小时</el-radio-button>
-            <el-radio-button value="24">24小时</el-radio-button>
-            <el-radio-button value="168">7天</el-radio-button>
-          </el-radio-group>
-        </el-divider>
-
-        <el-row :gutter="16">
-          <el-col :span="8">
-            <el-card shadow="hover" class="metric-card">
-              <div class="metric-header"><el-icon style="color:#4f6ef7"><Cpu /></el-icon> CPU</div>
-              <div ref="cpuChartRef" style="height:220px"></div>
-            </el-card>
-          </el-col>
-          <el-col :span="8">
-            <el-card shadow="hover" class="metric-card">
-              <div class="metric-header"><el-icon style="color:#22c55e"><Memo /></el-icon> 内存</div>
-              <div ref="memChartRef" style="height:220px"></div>
-            </el-card>
-          </el-col>
-          <el-col :span="8">
-            <el-card shadow="hover" class="metric-card">
-              <div class="metric-header"><el-icon style="color:#f59e0b"><Coin /></el-icon> 磁盘</div>
-              <div ref="diskChartRef" style="height:220px"></div>
-            </el-card>
-          </el-col>
-        </el-row>
-
-        <el-card shadow="hover" style="margin-top:16px">
-          <template #header><span class="card-title">监控明细</span></template>
-          <el-table :data="metrics" stripe size="small" max-height="320" v-loading="loading">
-            <el-table-column prop="created_at" label="时间" width="170" />
-            <el-table-column prop="cpu_usage" label="CPU%" width="100">
-              <template #default="{ row }"><span :class="usageClass(row.cpu_usage)">{{ row.cpu_usage }}%</span></template>
-            </el-table-column>
-            <el-table-column prop="memory_usage" label="内存%" width="100">
-              <template #default="{ row }"><span :class="usageClass(row.memory_usage)">{{ row.memory_usage }}%</span></template>
-            </el-table-column>
-            <el-table-column label="内存" width="160">
-              <template #default="{ row }">{{ row.memory_used }} / {{ row.memory_total }} MB</template>
-            </el-table-column>
-            <el-table-column prop="disk_usage" label="磁盘%" width="100">
-              <template #default="{ row }"><span :class="usageClass(row.disk_usage)">{{ row.disk_usage }}%</span></template>
-            </el-table-column>
-            <el-table-column label="磁盘" width="160">
-              <template #default="{ row }">{{ row.disk_used }} / {{ row.disk_total }} MB</template>
-            </el-table-column>
-            <el-table-column prop="load_avg" label="负载" width="140" />
-            <el-table-column prop="uptime" label="运行时间" show-overflow-tooltip />
-          </el-table>
-        </el-card>
-      </template>
+      </div>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { io } from 'socket.io-client'
-import api from '../../api'
-import * as echarts from 'echarts'
-
-const route = useRoute()
 
 const servers = ref([])
-const serverId = ref('')
-const metrics = ref([])
-const loading = ref(false)
-const timeRange = ref('24')
-const cpuChartRef = ref(null)
-const memChartRef = ref(null)
-const diskChartRef = ref(null)
-const rtChartRef = ref(null)
-const charts = []
+const loaded = ref(false)
+const connected = ref(false)
+const updatedAt = ref('')
+const groupFilter = ref('')
+const statusFilter = ref('')
+const keyword = ref('')
+const sortBy = ref('health')
+let socket = null
 
-// 实时监控
-const rtConnected = ref(false)
-const rtData = ref({ cpu: null, mem_usage: null, mem_used: 0, mem_total: 0, disk_usage: null, disk_used: 0, disk_total: 0, load_avg: '-', uptime: '-' })
-const rtHistory = ref([])
-let rtSocket = null
-let rtChart = null
-
-const MAX_RT_POINTS = 60
-
-const realtimeCards = computed(() => [
-  { label: 'CPU', value: rtData.value.cpu !== null ? rtData.value.cpu.toFixed(1) + '%' : '-', sub: '使用率', color: rtData.value.cpu > 90 ? '#ef4444' : rtData.value.cpu > 70 ? '#f59e0b' : '#4f6ef7' },
-  { label: '内存', value: rtData.value.mem_usage !== null ? rtData.value.mem_usage.toFixed(1) + '%' : '-', sub: `${rtData.value.mem_used} / ${rtData.value.mem_total} MB`, color: rtData.value.mem_usage > 90 ? '#ef4444' : rtData.value.mem_usage > 70 ? '#f59e0b' : '#22c55e' },
-  { label: '磁盘', value: rtData.value.disk_usage !== null ? rtData.value.disk_usage.toFixed(1) + '%' : '-', sub: `${rtData.value.disk_used} / ${rtData.value.disk_total} MB`, color: rtData.value.disk_usage > 90 ? '#ef4444' : rtData.value.disk_usage > 70 ? '#f59e0b' : '#f59e0b' },
-  { label: '负载', value: rtData.value.load_avg, sub: rtData.value.uptime, color: '#64748b' },
-])
-
-onMounted(async () => {
-  const r = await api.get('/api/servers')
-  if (r.code === 0) servers.value = r.data
-  // 支持从主页监控卡片深链过来：?id=<serverId>
-  const deepId = route.query.id
-  if (deepId) {
-    serverId.value = Number(deepId)
-    loadHistory()
+const groups = computed(() => {
+  const map = new Map()
+  for (const server of servers.value) {
+    if (server.group_id && server.group_name) map.set(server.group_id, { id: server.group_id, name: server.group_name })
   }
+  return Array.from(map.values())
 })
 
-onBeforeUnmount(() => {
-  stopRealtime()
-  charts.forEach(c => c.dispose())
+const summary = computed(() => {
+  const total = servers.value.length
+  const online = servers.value.filter(server => server.status === 'online').length
+  const offline = servers.value.filter(server => server.status === 'offline').length
+  const critical = servers.value.filter(server => cardHealth(server).className === 'critical').length
+  return { total, online, offline, critical }
 })
 
-function onServerChange() {
-  stopRealtime()
-  rtData.value = { cpu: null, mem_usage: null, mem_used: 0, mem_total: 0, disk_usage: null, disk_used: 0, disk_total: 0, load_avg: '-', uptime: '-' }
-  rtHistory.value = []
-  loadHistory()
-}
+const updatedText = computed(() => {
+  if (!updatedAt.value) return '-'
+  return new Date(updatedAt.value).toLocaleTimeString('zh-CN', { hour12: false })
+})
 
-// ──── 实时监控 ────
-function startRealtime() {
-  if (!serverId.value) return
-  stopRealtime()
-  rtHistory.value = []
+const filteredServers = computed(() => {
+  const q = keyword.value.trim().toLowerCase()
+  const list = servers.value.filter(server => {
+    if (groupFilter.value && server.group_id !== groupFilter.value) return false
+    if (statusFilter.value && server.status !== statusFilter.value) return false
+    if (!q) return true
+    return [server.name, server.host, server.os_info, server.group_name].some(value => String(value || '').toLowerCase().includes(q))
+  })
+  const healthRank = server => ({ critical: 4, warning: 3, normal: 2, offline: 1 }[cardHealth(server).className] || 0)
+  const num = value => Number(value) || 0
+  if (sortBy.value === 'cpu') list.sort((a, b) => num(b.cpu_usage) - num(a.cpu_usage))
+  else if (sortBy.value === 'memory') list.sort((a, b) => num(b.memory_usage) - num(a.memory_usage))
+  else if (sortBy.value === 'disk') list.sort((a, b) => num(b.disk_usage) - num(a.disk_usage))
+  else if (sortBy.value === 'health') list.sort((a, b) => healthRank(b) - healthRank(a))
+  return list
+})
 
+onMounted(connectMonitor)
+onBeforeUnmount(disconnectMonitor)
+
+function connectMonitor() {
   const token = localStorage.getItem('token')
-  rtSocket = io('/metrics', { auth: { token }, transports: ['websocket'] })
-
-  rtSocket.on('connect', () => {
-    rtSocket.emit('start', serverId.value)
+  if (!token) return
+  socket = io('/monitor', { auth: { token }, transports: ['websocket'] })
+  socket.on('connect', () => { connected.value = true })
+  socket.on('disconnect', () => { connected.value = false })
+  socket.on('connect_error', () => {
+    connected.value = false
+    loaded.value = true
   })
-
-  rtSocket.on('connected', () => {
-    rtConnected.value = true
-  })
-
-  rtSocket.on('metrics', (data) => {
-    rtData.value = data
-    rtHistory.value.push(data)
-    if (rtHistory.value.length > MAX_RT_POINTS) rtHistory.value.shift()
-    renderRealtimeChart()
-  })
-
-  rtSocket.on('error', (msg) => {
-    rtConnected.value = false
-  })
-
-  rtSocket.on('disconnect', () => {
-    rtConnected.value = false
+  socket.on('snapshot', (list) => {
+    servers.value = list || []
+    updatedAt.value = new Date().toISOString()
+    loaded.value = true
   })
 }
 
-function stopRealtime() {
-  try { rtSocket?.emit('stop') } catch {}
-  try { rtSocket?.disconnect() } catch {}
-  rtSocket = null
-  rtConnected.value = false
+function disconnectMonitor() {
+  try { socket?.disconnect() } catch {}
+  socket = null
 }
 
-function renderRealtimeChart() {
-  if (!rtChartRef.value) return
-  if (!rtChart) rtChart = echarts.init(rtChartRef.value)
-
-  const times = rtHistory.value.map(d => new Date(d.timestamp).toLocaleTimeString('zh-CN', { hour12: false }))
-  rtChart.setOption({
-    tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e8ecf4', borderWidth: 1, textStyle: { color: '#1e293b', fontSize: 12 } },
-    legend: { data: ['CPU', '内存', '磁盘'], top: 0, textStyle: { fontSize: 12 } },
-    grid: { left: 40, right: 10, top: 30, bottom: 24 },
-    xAxis: { type: 'category', data: times, axisLabel: { color: '#94a3b8', fontSize: 10, interval: 'auto' }, axisLine: { lineStyle: { color: '#e8ecf4' } } },
-    yAxis: { type: 'value', min: 0, max: 100, splitLine: { lineStyle: { color: '#f4f6fb' } }, axisLabel: { color: '#94a3b8' } },
-    series: [
-      { name: 'CPU', type: 'line', data: rtHistory.value.map(d => d.cpu?.toFixed(1) || 0), smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#4f6ef7' } },
-      { name: '内存', type: 'line', data: rtHistory.value.map(d => d.mem_usage?.toFixed(1) || 0), smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#22c55e' } },
-      { name: '磁盘', type: 'line', data: rtHistory.value.map(d => d.disk_usage?.toFixed(1) || 0), smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#f59e0b' } },
-    ]
-  })
-  window.addEventListener('resize', () => rtChart?.resize())
+function num(value) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
 }
 
-// ──── 历史曲线 ────
-async function loadHistory() {
-  if (!serverId.value) return
-  loading.value = true
-  try {
-    const res = await api.get(`/api/servers/${serverId.value}/metrics`, { params: { hours: timeRange.value } })
-    if (res.code === 0) {
-      metrics.value = res.data
-      await nextTick()
-      renderHistoryCharts(res.data)
-    }
-  } finally { loading.value = false }
+function pct(value) {
+  return Math.min(100, Math.round(num(value) * 10) / 10)
 }
 
-function usageClass(val) {
-  if (val > 90) return 'usage-high'
-  if (val > 70) return 'usage-warn'
-  return 'usage-normal'
+function usageColor(value) {
+  const n = num(value)
+  if (n >= 90) return '#ef4444'
+  if (n >= 70) return '#f59e0b'
+  return '#22c55e'
 }
 
-function buildChartOption(data, key, color) {
-  const times = data.map(d => d.created_at ? d.created_at.slice(11, 16) : '')
-  const values = data.map(d => Number(d[key]) || 0)
-  return {
-    tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e8ecf4', borderWidth: 1, textStyle: { color: '#1e293b' } },
-    grid: { left: 40, right: 10, top: 20, bottom: 30 },
-    xAxis: { type: 'category', data: times, axisLine: { lineStyle: { color: '#e8ecf4' } }, axisLabel: { color: '#94a3b8', fontSize: 11 } },
-    yAxis: { type: 'value', min: 0, max: 100, splitLine: { lineStyle: { color: '#f4f6fb' } }, axisLabel: { color: '#94a3b8' } },
-    series: [{
-      type: 'line', data: values, smooth: true, symbol: 'none', lineStyle: { width: 2, color },
-      areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: color + '30' }, { offset: 1, color: color + '05' }]) }
-    }]
+function cardHealth(server) {
+  if (server.status !== 'online') return { color: '#94a3b8', className: 'offline' }
+  if (pct(server.cpu_usage) >= 90 || pct(server.memory_usage) >= 90 || pct(server.disk_usage) >= 90) return { color: '#ef4444', className: 'critical' }
+  if (pct(server.cpu_usage) >= 70 || pct(server.memory_usage) >= 70 || pct(server.disk_usage) >= 70) return { color: '#f59e0b', className: 'warning' }
+  return { color: '#22c55e', className: 'normal' }
+}
+
+function statusText(status) {
+  if (status === 'online') return '在线'
+  if (status === 'offline') return '离线'
+  return '未知'
+}
+
+function mb(value) {
+  const n = num(value)
+  if (n <= 0) return '-'
+  if (n >= 1024) return `${(n / 1024).toFixed(1)} GB`
+  return `${Math.round(n)} MB`
+}
+
+function bytes(value) {
+  let n = num(value)
+  if (n <= 0) return '-'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let index = 0
+  while (n >= 1024 && index < units.length - 1) {
+    n /= 1024
+    index += 1
   }
+  return `${n.toFixed(n >= 10 || index === 0 ? 0 : 1)} ${units[index]}`
 }
 
-function renderChart(el, option) {
-  if (!el) return
-  let chart = echarts.getInstanceByDom(el)
-  if (!chart) { chart = echarts.init(el); charts.push(chart) }
-  chart.setOption(option, true)
-  window.addEventListener('resize', () => chart.resize())
-}
-
-function renderHistoryCharts(data) {
-  renderChart(cpuChartRef.value, buildChartOption(data, 'cpu_usage', '#4f6ef7'))
-  renderChart(memChartRef.value, buildChartOption(data, 'memory_usage', '#22c55e'))
-  renderChart(diskChartRef.value, buildChartOption(data, 'disk_usage', '#f59e0b'))
+function formatTime(value) {
+  if (!value) return '-'
+  return String(value).replace('T', ' ').replace('.000Z', '').replace('Z', '')
 }
 </script>
 
 <style scoped>
-.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.toolbar-right { display: flex; gap: 10px; align-items: center; }
-
-.realtime-panel {
-  margin-top: 16px; padding: 16px; background: #f8fafc; border-radius: 12px; border: 1px solid #e8ecf4;
-}
-.rt-status-bar {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
-  font-size: 13px; color: #64748b;
-}
-.status-dot {
-  width: 8px; height: 8px; border-radius: 50%; display: inline-block;
-}
-.status-dot.online { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); animation: pulse 2s infinite; }
-.status-dot.offline { background: #94a3b8; }
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+.monitor-page {
+  min-height: calc(100vh - 56px);
 }
 
-.rt-card {
-  background: #fff; border-radius: 10px; padding: 16px 20px; text-align: center;
-  transition: transform 0.15s;
+.monitor-card {
+  border-radius: 10px;
+  border: 1px solid #e5eaf3;
+  overflow: hidden;
 }
-.rt-card:hover { transform: translateY(-2px); }
-.rt-label { font-size: 13px; color: #64748b; margin-bottom: 6px; }
-.rt-value { font-size: 28px; font-weight: 700; line-height: 1.2; }
-.rt-sub { font-size: 12px; color: #94a3b8; margin-top: 6px; }
 
-.divider-text { font-size: 14px; color: #64748b; }
-.metric-card { border-radius: 12px; }
-.metric-header { font-weight: 600; color: #1e293b; font-size: 14px; display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-.card-title { font-weight: 600; color: #1e293b; font-size: 15px; }
-.usage-normal { color: #22c55e; font-weight: 600; }
-.usage-warn { color: #f59e0b; font-weight: 600; }
-.usage-high { color: #ef4444; font-weight: 700; }
+.monitor-card :deep(.el-card__body) {
+  padding: 20px;
+}
+
+.monitor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.page-title {
+  color: #111827;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.page-desc {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.monitor-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #64748b;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.monitor-state em {
+  color: #94a3b8;
+  font-style: normal;
+}
+
+.state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.state-dot.online {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.45);
+}
+
+.summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.summary-item {
+  padding: 12px 14px;
+  border: 1px solid #e6edf5;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.summary-item span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.summary-item strong {
+  display: block;
+  margin-top: 4px;
+  color: #111827;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.summary-item.success strong { color: #16a34a; }
+.summary-item.muted strong { color: #64748b; }
+.summary-item.danger strong { color: #dc2626; }
+
+.filter-bar {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(220px, 1fr) minmax(130px, 160px) minmax(140px, 170px);
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid #e6edf5;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.filter-bar :deep(.el-select),
+.filter-bar :deep(.el-input) {
+  width: 100%;
+}
+
+.monitor-alert {
+  margin-bottom: 14px;
+}
+
 .empty-state {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  height: 300px; color: #94a3b8; background: #f8fafc; border-radius: 12px; border: 2px dashed #e2e8f0;
-  p { margin-top: 12px; font-size: 15px; }
+  padding: 64px 0;
+  color: #94a3b8;
+  text-align: center;
+  border: 1px dashed #dbe5ef;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.server-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.server-card {
+  padding: 14px;
+  border: 1px solid #e6edf5;
+  border-left: 4px solid var(--health-color);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.server-card.warning {
+  background: #fffaf0;
+  border-color: #fde68a;
+}
+
+.server-card.critical {
+  background: #fff7f7;
+  border-color: #fecaca;
+}
+
+.server-card.offline {
+  opacity: 0.72;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.server-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.server-title {
+  min-width: 0;
+}
+
+.server-title strong {
+  display: block;
+  overflow: hidden;
+  color: #111827;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.server-title span {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: #4f6ef7;
+  background: #eef4ff;
+  font-size: 12px;
+}
+
+.server-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.server-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.server-status.online { color: #16a34a; }
+.server-status.online i { background: #22c55e; }
+.server-status.offline { color: #ef4444; }
+.server-status.offline i { background: #ef4444; }
+
+.server-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 10px 0 12px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.server-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-row {
+  margin-bottom: 9px;
+}
+
+.metric-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.metric-label strong {
+  color: #334155;
+  font-weight: 600;
+}
+
+.metric-label em {
+  margin-left: 4px;
+  color: #94a3b8;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.metric-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8ecf4;
+}
+
+.metric-bar div {
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.4s ease;
+}
+
+.server-foot,
+.network-row,
+.fresh-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.server-foot {
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px dashed #e6edf5;
+}
+
+.network-row {
+  margin-top: 6px;
+  color: #0891b2;
+}
+
+.fresh-row {
+  margin-top: 6px;
+  display: block;
+}
+
+@media (max-width: 900px) {
+  .monitor-header {
+    flex-direction: column;
+  }
+
+  .summary-row,
+  .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .server-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

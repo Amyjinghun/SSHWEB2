@@ -46,7 +46,8 @@ const DEFAULT_SETTINGS = {
   alert_template_disk: '',
   alert_template_expiry: '',
   alert_template_expired: '',
-  server_check_interval: '180',
+  server_monitor_mode: 'realtime',
+  server_check_interval: '10',
   server_monitor_concurrency: '5',
   public_monitor_enabled: 'false',
   public_monitor_key: ''
@@ -61,6 +62,8 @@ router.get('/', async (req, res) => {
     const settings = await db.query('SELECT setting_key, setting_value FROM settings');
     const obj = { ...DEFAULT_SETTINGS };
     settings.forEach(s => { obj[s.setting_key] = s.setting_value; });
+    const hasMonitorMode = settings.some(s => s.setting_key === 'server_monitor_mode');
+    if (!hasMonitorMode && Number(obj.server_check_interval) >= 120) obj.server_monitor_mode = 'normal';
     res.json({ code: 0, data: obj });
   } catch (err) {
     res.json({ code: 500, message: err.message });

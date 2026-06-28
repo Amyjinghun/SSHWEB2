@@ -85,6 +85,23 @@ check_os() {
   fi
 }
 
+copy_project_files() {
+  local target="$1"
+  mkdir -p "${target}"
+  (
+    cd "${SCRIPT_DIR}"
+    tar \
+      --exclude='./client/node_modules' \
+      --exclude='./client/dist' \
+      --exclude='./server/node_modules' \
+      --exclude='./.git' \
+      --exclude='./.claude' \
+      -cf - .
+  ) | (
+    cd "${target}"
+    tar -xf -
+  )
+}
 read_default() {
   local prompt="$1"
   local default="$2"
@@ -263,7 +280,7 @@ EOF
   step_info "3/7" "部署项目文件"
   mkdir -p "${INSTALL_DIR}"
   mkdir -p "${LOG_DIR}"
-  cp -r "${SCRIPT_DIR}"/* "${INSTALL_DIR}/"
+  copy_project_files "${INSTALL_DIR}"
   cp -r "${SCRIPT_DIR}/.env.example" "${INSTALL_DIR}/.env.example" 2>/dev/null || true
   cd "${INSTALL_DIR}"
   step_done "文件已复制到 ${INSTALL_DIR}"
@@ -287,12 +304,12 @@ EOF
 
   # ──── 步骤 5: 构建前后端 ────
   step_info "5/7" "安装依赖并构建"
-
   cd "${INSTALL_DIR}/server"
+  rm -rf node_modules
   npm install --production
   step_done "后端依赖安装完成"
-
   cd "${INSTALL_DIR}/client"
+  rm -rf node_modules dist
   npm install
   npm run build
   step_done "前端构建完成"
@@ -609,13 +626,18 @@ do_update() {
   cp -r "${SCRIPT_DIR}/server/src" "${INSTALL_DIR}/server/"
   cp -r "${SCRIPT_DIR}/server/package.json" "${INSTALL_DIR}/server/"
   cd "${INSTALL_DIR}/server"
+  rm -rf node_modules
   npm install --production
   step_done "后端已更新"
 
   # 更新前端
   cp -r "${SCRIPT_DIR}/client/src" "${INSTALL_DIR}/client/"
   cp -r "${SCRIPT_DIR}/client/package.json" "${INSTALL_DIR}/client/"
+  cp -r "${SCRIPT_DIR}/client/package-lock.json" "${INSTALL_DIR}/client/" 2>/dev/null || true
+  cp -r "${SCRIPT_DIR}/client/index.html" "${INSTALL_DIR}/client/"
+  cp -r "${SCRIPT_DIR}/client/vite.config.js" "${INSTALL_DIR}/client/"
   cd "${INSTALL_DIR}/client"
+  rm -rf node_modules dist
   npm install
   npm run build
   step_done "前端已更新"
@@ -778,7 +800,7 @@ do_docker_install() {
   ENCRYPTION_KEY=$(openssl rand -base64 32)
 
   mkdir -p "${INSTALL_DIR}"
-  cp -r "${SCRIPT_DIR}"/* "${INSTALL_DIR}/"
+  copy_project_files "${INSTALL_DIR}"
   cd "${INSTALL_DIR}"
 
   cat > "${INSTALL_DIR}/docker-compose.custom.yml" <<EOF
@@ -994,3 +1016,4 @@ case "${1}" in
     show_menu
   ;;
 esac
+

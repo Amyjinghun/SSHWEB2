@@ -28,11 +28,13 @@ function setupRealtimeMetrics(io) {
   nsp.on('connection', (socket) => {
     let conn = null;
     let timer = null;
+    let lastNet = null;
 
     async function closeAll() {
       if (timer) { clearInterval(timer); timer = null; }
       try { if (conn) conn.end(); } catch {}
       conn = null;
+      lastNet = null;
     }
 
     socket.on('start', async (serverId) => {
@@ -52,6 +54,15 @@ function setupRealtimeMetrics(io) {
           try {
             if (!conn) return;
             const m = await collectServerMetrics(conn);
+            const now = Date.now();
+            let netRxRate = 0;
+            let netTxRate = 0;
+            if (lastNet && now > lastNet.timestamp) {
+              const elapsed = (now - lastNet.timestamp) / 1000;
+              netRxRate = Math.max(0, (m.netRxBytes - lastNet.rx) / elapsed);
+              netTxRate = Math.max(0, (m.netTxBytes - lastNet.tx) / elapsed);
+            }
+            lastNet = { rx: m.netRxBytes, tx: m.netTxBytes, timestamp: now };
             socket.emit('metrics', {
               cpu: m.cpu,
               mem_usage: m.memUsage,
@@ -60,9 +71,13 @@ function setupRealtimeMetrics(io) {
               disk_usage: m.diskUsage,
               disk_used: m.diskUsed,
               disk_total: m.diskTotal,
+              net_rx_bytes: m.netRxBytes,
+              net_tx_bytes: m.netTxBytes,
+              net_rx_rate: netRxRate,
+              net_tx_rate: netTxRate,
               load_avg: m.loadAvg,
               uptime: m.uptime,
-              timestamp: Date.now()
+              timestamp: now
             });
           } catch (err) {
             socket.emit('error', '采集失败: ' + err.message);

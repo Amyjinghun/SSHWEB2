@@ -47,9 +47,15 @@
               :closable="false"
               style="margin-bottom: 16px"
             />
+            <el-form-item label="监控采集模式">
+              <el-radio-group v-model="settings.server_monitor_mode" @change="applyMonitorMode">
+                <el-radio-button label="realtime">实时模式</el-radio-button>
+                <el-radio-button label="normal">常规模式</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
             <el-form-item label="监控扫描间隔(秒)">
-              <el-input-number v-model="settings.server_check_interval" :min="60" :max="3600" />
-              <span class="hint">默认 120 秒</span>
+              <el-input-number v-model="settings.server_check_interval" :min="monitorIntervalMin" :max="monitorIntervalMax" />
+              <span class="hint">{{ monitorIntervalHint }}</span>
             </el-form-item>
             <el-form-item label="监控并发数量">
               <el-input-number v-model="settings.server_monitor_concurrency" :min="1" :max="30" />
@@ -151,7 +157,7 @@
 </template>
 
 <script setup>
-import { defineComponent, h, ref, onMounted } from 'vue'
+import { computed, defineComponent, h, ref, onMounted } from 'vue'
 import api from '../../api'
 import { ElMessage } from 'element-plus'
 
@@ -336,6 +342,13 @@ const TemplateEditor = defineComponent({
 const settings = ref({})
 const saving = ref(false)
 const testing = ref(false)
+const monitorIntervalMin = computed(() => settings.value.server_monitor_mode === 'normal' ? 120 : 5)
+const monitorIntervalMax = computed(() => settings.value.server_monitor_mode === 'normal' ? 180 : 60)
+const monitorIntervalHint = computed(() => (
+  settings.value.server_monitor_mode === 'normal'
+    ? '常规模式建议 120-180 秒，压力更低'
+    : '实时模式建议 5-10 秒，服务器多时可调高'
+))
 const activeTab = ref('telegram')
 const openTemplates = ref(['expiry'])
 
@@ -360,7 +373,8 @@ function defaultValue() {
     alert_disk_threshold: 90,
     alert_server_expiry_days: 2,
     alert_repeat_hours: 12,
-    server_check_interval: 120,
+    server_monitor_mode: 'realtime',
+    server_check_interval: 10,
     server_monitor_concurrency: 5,
     alert_template_offline: '',
     alert_template_cpu: '',
@@ -382,6 +396,10 @@ async function saveSettings() {
   }
 }
 
+function applyMonitorMode(mode) {
+  settings.value.server_check_interval = mode === 'normal' ? 180 : 10
+}
+
 async function testTelegram() {
   testing.value = true
   try {
@@ -401,139 +419,227 @@ onMounted(loadSettings)
 
 <style scoped lang="scss">
 .notification-page {
-  .page-card { border-radius: 12px; }
+  .page-card {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #e5eaf3;
+  }
+
+  :deep(.el-card__header) {
+    padding: 18px 20px;
+    border-bottom: 1px solid #e8edf5;
+    background: #fff;
+  }
+
+  :deep(.el-card__body) {
+    padding: 20px;
+  }
+
   .card-header {
     display: flex;
     justify-content: space-between;
     gap: 16px;
     align-items: center;
-    .title { font-size: 18px; font-weight: 700; color: #1f2937; }
-    .desc { margin-top: 6px; color: #64748b; font-size: 13px; }
-    .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .desc {
+      margin-top: 6px;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
   }
-  .form-block { max-width: 920px; }
-  .hint { margin-left: 10px; color: #909399; font-size: 12px; }
-  .template-editor {
-    padding: 10px 0 16px;
-    border-radius: 16px;
-    background: linear-gradient(180deg, #fbfdff 0%, #f6f9fc 100%);
-    border: 1px solid #e5edf5;
+
+  :deep(.el-alert) {
+    border-radius: 8px;
+  }
+
+  :deep(.el-tabs__header) {
+    margin-bottom: 16px;
+  }
+
+  .form-block {
+    max-width: 920px;
+  }
+
+  .hint {
+    margin-left: 10px;
+    color: #909399;
+    font-size: 12px;
+  }
+
+  :deep(.template-editor) {
+    border-radius: 10px;
+    background: #f8fafc;
+    border: 1px solid #e3eaf3;
     overflow: hidden;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
   }
-  .template-toolbar {
-    padding: 16px 18px 14px;
+
+  :deep(.template-toolbar) {
+    padding: 16px 18px;
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
-    border-bottom: 1px solid #e8eef5;
-    background: rgba(255,255,255,0.72);
+    border-bottom: 1px solid #e3eaf3;
+    background: #fff;
   }
-  .template-toolbar-left {
+
+  :deep(.template-toolbar-left) {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    min-width: 0;
   }
-  .template-title {
+
+  :deep(.template-title) {
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
-    color: #1f2937;
+    color: #172033;
   }
-  .template-badge {
+
+  :deep(.template-badge) {
     display: inline-flex;
     align-items: center;
-    padding: 2px 10px;
-    border-radius: 20px;
-    background: linear-gradient(135deg, #4f6ef7, #7b93fa);
-    color: #fff;
-    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #eef4ff;
+    color: #4f6ef7;
+    font-size: 12px;
     font-weight: 600;
-    letter-spacing: 0.5px;
   }
-  .template-subtitle {
+
+  :deep(.template-subtitle) {
     font-size: 12px;
     line-height: 1.6;
     color: #64748b;
     max-width: 680px;
   }
-  .template-actions {
+
+  :deep(.template-actions) {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     flex-wrap: wrap;
+    justify-content: flex-end;
   }
-  .preview-toggle {
-    border: 1px solid #22c55e;
+
+  :deep(.preview-toggle),
+  :deep(.reset-btn) {
+    height: 32px;
+    border-radius: 6px;
+    padding: 0 12px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 30px;
+    transition: all .18s ease;
+  }
+
+  :deep(.preview-toggle) {
+    border: 1px solid #4f6ef7;
     color: #fff;
-    background: linear-gradient(135deg, #22c55e, #16a34a);
-    border-radius: 10px;
-    padding: 8px 14px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 600;
-    transition: all .2s ease;
-    &:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(34, 197, 94, 0.25); }
+    background: #4f6ef7;
+
+    &:hover {
+      border-color: #3f5fe8;
+      background: #3f5fe8;
+      box-shadow: 0 6px 14px rgba(79, 110, 247, 0.22);
+    }
   }
-  .reset-btn {
-    border: 1px solid #409eff;
-    color: #409eff;
-    background: #ecf5ff;
-    border-radius: 10px;
-    padding: 8px 14px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 600;
-    transition: all .2s ease;
-    &:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(64, 158, 255, 0.14); }
-    &.light { border-color: #dcdfe6; color: #606266; background: #fff; }
+
+  :deep(.reset-btn) {
+    border: 1px solid #d6deeb;
+    color: #334155;
+    background: #fff;
+
+    &:hover {
+      color: #4f6ef7;
+      border-color: #b7c5ff;
+      background: #f5f7ff;
+    }
+
+    &.light {
+      color: #64748b;
+      border-color: #d6deeb;
+      background: #fff;
+    }
   }
-  .template-input-wrap {
-    padding: 16px 18px 18px;
+
+  :deep(.template-input-wrap) {
+    padding: 16px;
   }
-  .template-textarea {
+
+  :deep(.template-textarea) {
+    display: block;
     width: 100%;
-    min-height: 260px;
+    min-height: 280px;
     resize: vertical;
-    border: 1px solid #dbe5ef;
-    border-radius: 14px;
-    padding: 16px 18px;
+    border: 1px solid #d9e2ef;
+    border-radius: 8px;
+    padding: 14px 16px;
     background: #ffffff;
-    color: #1f2937;
+    color: #172033;
     font-size: 14px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-    line-height: 1.8;
+    line-height: 1.75;
     outline: none;
     box-sizing: border-box;
     transition: all .2s ease;
-    &:focus { border-color: #409eff; box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.12); }
-    &::placeholder { color: #94a3b8; white-space: pre-wrap; }
+
+    &:focus {
+      border-color: #4f6ef7;
+      box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.12);
+    }
+
+    &::placeholder {
+      color: #94a3b8;
+      white-space: pre-wrap;
+    }
   }
 
-  .preview-panel {
-    padding: 16px 18px 18px;
+  :deep(.preview-panel) {
+    padding: 0 16px 16px;
   }
-  .preview-header {
+
+  :deep(.preview-header) {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
   }
-  .preview-label {
+
+  :deep(.preview-label) {
     font-size: 13px;
     font-weight: 700;
     color: #1e293b;
   }
-  .preview-hint {
+
+  :deep(.preview-hint) {
     font-size: 11px;
     color: #94a3b8;
   }
-  .preview-content {
-    background: #1a1a2e;
-    border-radius: 14px;
-    padding: 20px 22px;
+
+  :deep(.preview-content) {
+    background: #111827;
+    border-radius: 8px;
+    padding: 18px 20px;
     color: #e2e8f0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 14px;
@@ -542,7 +648,8 @@ onMounted(loadSettings)
     overflow-y: auto;
     box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
   }
-  .preview-line {
+
+  :deep(.preview-line) {
     min-height: 22px;
     white-space: pre-wrap;
     word-break: break-all;
@@ -553,49 +660,66 @@ onMounted(loadSettings)
     border-bottom: none;
   }
   :deep(.el-collapse-item) {
-    margin-bottom: 14px;
-    border: 1px solid #e8eef5;
-    border-radius: 14px;
+    margin-bottom: 12px;
+    border: 1px solid #e3eaf3;
+    border-radius: 10px;
     overflow: hidden;
     background: #fff;
   }
+
   :deep(.el-collapse-item__header) {
     height: auto;
-    min-height: 52px;
+    min-height: 54px;
     padding: 14px 18px;
     font-size: 15px;
     font-weight: 700;
-    color: #1f2937;
-    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-    border-bottom: 1px solid #eef3f8;
+    color: #172033;
+    background: #fbfcfe;
+    border-bottom: 1px solid #edf2f7;
   }
+
   :deep(.el-collapse-item__wrap) {
     border-bottom: none;
   }
+
   :deep(.el-collapse-item__content) {
-    padding: 0 16px 8px;
+    padding: 0 16px 14px;
+    background: #fff;
   }
+
   :deep(code) {
     display: inline-block;
-    padding: 4px 8px;
-    border-radius: 8px;
+    padding: 2px 6px;
+    border-radius: 6px;
     background: #f3f7fb;
     color: #2563eb;
     font-size: 12px;
   }
 
   @media (max-width: 768px) {
-    .template-toolbar {
+    :deep(.el-card__body) {
+      padding: 14px;
+    }
+
+    .card-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    :deep(.template-toolbar) {
       flex-direction: column;
       align-items: stretch;
     }
-    .template-actions {
+
+    :deep(.template-actions) {
       justify-content: flex-start;
     }
-    .template-input-wrap {
+
+    :deep(.template-input-wrap) {
       padding: 14px;
     }
-    .template-textarea {
+
+    :deep(.template-textarea) {
       min-height: 220px;
     }
   }

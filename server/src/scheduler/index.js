@@ -46,6 +46,21 @@ df -Pm / | awk 'NR==2 {
   printf "DISK_USAGE=%.2f\n", $5;
 }'
 
+awk -F'[: ]+' '
+NR > 2 {
+  iface=$2;
+  if (iface == "lo") next;
+  rx += $3;
+  tx += $11;
+}
+END {
+  printf "NET_RX_BYTES=%.0f\n", rx;
+  printf "NET_TX_BYTES=%.0f\n", tx;
+}' /proc/net/dev 2>/dev/null || {
+  printf 'NET_RX_BYTES=0\n'
+  printf 'NET_TX_BYTES=0\n'
+}
+
 awk '{ printf "LOAD_AVG=%s %s %s\n", $1, $2, $3 }' /proc/loadavg 2>/dev/null || printf 'LOAD_AVG=-\n'
 
 if [ -f /etc/os-release ]; then
@@ -130,6 +145,8 @@ async function collectServerMetrics(conn) {
     diskTotal: n(kv.DISK_TOTAL_MB, 0),
     diskUsed: n(kv.DISK_USED_MB, 0),
     diskUsage: n(kv.DISK_USAGE, 0),
+    netRxBytes: n(kv.NET_RX_BYTES, 0),
+    netTxBytes: n(kv.NET_TX_BYTES, 0),
     loadAvg: kv.LOAD_AVG || '-',
     uptime: kv.UPTIME || '-',
     osInfo: (kv.OS_INFO || '').slice(0, 255)
@@ -266,13 +283,13 @@ async function checkOneServer(server) {
     const metrics = await collectServerMetrics(conn);
 
     await db.insert(
-      'INSERT INTO server_metrics (server_id, cpu_usage, memory_total, memory_used, memory_usage, disk_total, disk_used, disk_usage, load_avg, uptime) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [server.id, metrics.cpu, metrics.memTotal, metrics.memUsed, metrics.memUsage, metrics.diskTotal, metrics.diskUsed, metrics.diskUsage, metrics.loadAvg, metrics.uptime]
+      'INSERT INTO server_metrics (server_id, cpu_usage, memory_total, memory_used, memory_usage, disk_total, disk_used, disk_usage, network_rx_bytes, network_tx_bytes, load_avg, uptime) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      [server.id, metrics.cpu, metrics.memTotal, metrics.memUsed, metrics.memUsage, metrics.diskTotal, metrics.diskUsed, metrics.diskUsage, metrics.netRxBytes, metrics.netTxBytes, metrics.loadAvg, metrics.uptime]
     );
 
     await db.update(
-      "UPDATE servers SET status='online', cpu_usage=?, memory_usage=?, disk_usage=?, os_info=COALESCE(?, os_info), uptime=?, load_avg=?, mem_total_mb=?, mem_used_mb=?, disk_total_mb=?, disk_used_mb=?, last_connected_at=NOW() WHERE id=?",
-      [metrics.cpu, metrics.memUsage, metrics.diskUsage, metrics.osInfo || null, metrics.uptime, metrics.loadAvg, metrics.memTotal, metrics.memUsed, metrics.diskTotal, metrics.diskUsed, server.id]
+      "UPDATE servers SET status='online', cpu_usage=?, memory_usage=?, disk_usage=?, os_info=COALESCE(?, os_info), uptime=?, load_avg=?, mem_total_mb=?, mem_used_mb=?, disk_total_mb=?, disk_used_mb=?, network_rx_bytes=?, network_tx_bytes=?, last_connected_at=NOW() WHERE id=?",
+      [metrics.cpu, metrics.memUsage, metrics.diskUsage, metrics.osInfo || null, metrics.uptime, metrics.loadAvg, metrics.memTotal, metrics.memUsed, metrics.diskTotal, metrics.diskUsed, metrics.netRxBytes, metrics.netTxBytes, server.id]
     );
 
     if (server.status !== 'online') {
@@ -391,7 +408,14 @@ async function checkServerExpiry() {
 
 async function statusLoop() {
   await checkAllServers();
-  const intervalSeconds = clamp(await getAlertNumber('server_check_interval', 120), 60, 3600);
+  const modeSetting = await db.queryOne("SELECT setting_value FROM settings WHERE setting_key='server_monitor_mode'");
+  const rawInterval = await getAlertNumber('server_check_interval', 10);
+  const mode = modeSetting?.setting_value
+    ? String(modeSetting.setting_value)
+    : (rawInterval >= 120 ? 'normal' : 'realtime');
+  const intervalSeconds = mode === 'normal'
+    ? clamp(rawInterval, 120, 180)
+    : clamp(rawInterval, 5, 60);
   statusTimer = setTimeout(statusLoop, intervalSeconds * 1000);
 }
 

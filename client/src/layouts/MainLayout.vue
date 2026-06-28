@@ -35,6 +35,7 @@
         <el-sub-menu index="servers">
           <template #title><el-icon><Server /></el-icon><span>服务器管理</span></template>
           <el-menu-item index="/groups">分组管理</el-menu-item>
+          <el-menu-item index="/software-installer">软件安装</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="terminal">
@@ -76,6 +77,7 @@
           <el-menu-item index="/alerts">告警中心</el-menu-item>
           <el-menu-item index="/notifications">告警通知</el-menu-item>
           <el-menu-item index="/audit">审计日志</el-menu-item>
+          <el-menu-item index="/connection-logs">连接日志</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="system">

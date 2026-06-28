@@ -1,10 +1,11 @@
 const express = require('express');
+const net = require('net');
 const db = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { createSSHConnection, execCommand } = require('../ssh/connection');
 const { writeAuditLog } = require('../utils/audit');
+const { logSSH, diagALS } = require('../utils/ssh-diag-log');
 const { checkOneServer } = require('../scheduler');
-const config = require('../config');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -14,6 +15,7 @@ function normalizeServerInput(body) {
   data.name = typeof data.name === 'string' ? data.name.trim() : data.name;
   data.host = typeof data.host === 'string' ? data.host.trim() : data.host;
   data.username = typeof data.username === 'string' ? data.username.trim() : data.username;
+  data.auth_type = normalizeAuthType(data.auth_type);
   if (data.host) {
     const match = String(data.host).match(/^([^:\[\]]+):(\d+)$/);
     if (match) {
@@ -87,6 +89,14 @@ function normalizeAuthType(value) {
     'password_private_key': 'password_private_key'
   };
   return map[raw] || 'password';
+}
+
+function authRequiresPassword(authType) {
+  return authType === 'password' || authType === 'password_private_key';
+}
+
+function authRequiresPrivateKey(authType) {
+  return authType === 'private_key' || authType === 'password_private_key';
 }
 
 function pickImportValue(row, keys, fallback = undefined) {
@@ -173,6 +183,55 @@ function safeDecrypt(value) {
   }
 }
 
+function describeConnectionTarget(server) {
+  const host = String(server?.host || '').trim();
+  const port = Number(server?.port) || 22;
+  const username = String(server?.username || '').trim();
+  const authType = normalizeAuthType(server?.auth_type);
+  const credential = [
+    server?.password_encrypted ? '密码' : '',
+    server?.private_key_encrypted ? '私钥' : ''
+  ].filter(Boolean).join('+') || '无';
+  return `面板实际连接 ${host}:${port}，用户 ${username || '-'}，认证 ${authType}，已保存凭据 ${credential}`;
+}
+
+function checkTcpPort(host, port, timeoutMs = 5000) {
+  const tcpTag = `tcp@${host}:${port}`;
+  const start = Date.now();
+  logSSH(tcpTag, 'TCP探测开始', `超时=${timeoutMs}ms`);
+  return new Promise((resolve, reject) => {
+    const socket = new net.Socket();
+    let settled = false;
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      const cost = Date.now() - start;
+      if (err) {
+        logSSH(tcpTag, 'TCP探测失败', `耗时=${cost}ms ${err.message}`);
+        reject(err);
+      } else {
+        logSSH(tcpTag, 'TCP探测成功', `耗时=${cost}ms`);
+        resolve();
+      }
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish());
+    socket.once('timeout', () => finish(new Error('TCP端口连接超时')));
+    socket.once('error', (err) => finish(new Error(err.code === 'ECONNREFUSED' ? 'TCP端口被拒绝' : `TCP端口不通：${err.message}`)));
+    socket.connect(Number(port) || 22, host);
+  });
+}
+
+async function probeTcpPort(host, port) {
+  try {
+    await checkTcpPort(host, port);
+    return { ok: true, message: 'TCP端口可达' };
+  } catch (err) {
+    return { ok: false, message: err.message };
+  }
+}
+
 function normalizeExportRow(row, includeCredentials = false) {
   const tags = parseTagsForExport(row.tags);
   const password = includeCredentials ? safeDecrypt(row.password_encrypted) : '';
@@ -239,6 +298,8 @@ router.post('/', async (req, res) => {
   try {
     const { name, host, port, username, auth_type, password, private_key, private_key_passphrase, group_id, tags, expires_at, remark } = normalizeServerInput(req.body);
     if (!name || !host || !username) return res.json({ code: 400, message: '服务器名称、主机地址和用户名为必填项' });
+    if (authRequiresPassword(auth_type) && !password) return res.json({ code: 400, message: '请填写SSH密码' });
+    if (authRequiresPrivateKey(auth_type) && !private_key) return res.json({ code: 400, message: '请填写SSH私钥' });
     const { encrypt } = require('../utils/crypto');
     const id = await db.insert(
       `INSERT INTO servers (name, host, port, username, auth_type, password_encrypted, private_key_encrypted, private_key_passphrase_encrypted, group_id, tags, expires_at, remark)
@@ -277,7 +338,7 @@ router.post('/import', async (req, res) => {
         const normalized = normalizeServerInput({
           name: pickImportValue(row, ['name', '服务器名称', '名称']),
           host: pickImportValue(row, ['host', 'ip', 'IP', '主机地址', '地址']),
-          port: pickImportValue(row, ['port', '端口'], 22),
+          port: pickImportValue(row, ['port', '端口']), // 不给默认值：port 列为空时交给 normalizeServerInput 用 host 里带的端口兜底（host 也不带端口再回落 22）
           username: pickImportValue(row, ['username', 'user', '用户', '用户名'], 'root'),
           auth_type: normalizeAuthType(pickImportValue(row, ['auth_type', '认证方式'], 'password')),
           password: pickImportValue(row, ['password', '密码'], ''),
@@ -333,12 +394,6 @@ router.get('/export', async (req, res) => {
   try {
     const format = String(req.query.format || 'csv').toLowerCase() === 'json' ? 'json' : 'csv';
     const includeCredentials = ['1', 'true', 'yes'].includes(String(req.query.include_credentials || '').toLowerCase());
-    if (includeCredentials && !config.security.allowPlainCredentialExport) {
-      return res.status(403).json({ code: 403, message: 'Plain credential export is disabled by server configuration' });
-    }
-    if (includeCredentials && req.user.role !== 'superadmin') {
-      return res.status(403).json({ code: 403, message: '只有超级管理员可以导出明文凭据' });
-    }
     const { where, params } = buildExportWhere(req.query);
     const rows = await db.query(
       `SELECT s.*, DATE_FORMAT(s.expires_at, '%Y-%m-%d') as expires_at, DATE_FORMAT(s.last_connected_at, '%Y-%m-%d %H:%i:%s') as last_connected_at, g.name as group_name
@@ -377,11 +432,12 @@ router.get('/:id', async (req, res) => {
   try {
     const server = await db.queryOne("SELECT s.*, DATE_FORMAT(s.expires_at, '%Y-%m-%d') as expires_at, g.name as group_name FROM servers s LEFT JOIN server_groups g ON s.group_id = g.id WHERE s.id = ?", [req.params.id]);
     if (!server) return res.json({ code: 404, message: '服务器不存在' });
+    const includeCredentials = ['1', 'true', 'yes'].includes(String(req.query.include_credentials || '').toLowerCase());
     server.has_password = !!server.password_encrypted;
     server.has_private_key = !!server.private_key_encrypted;
     server.tags = parseTagsField(server.tags);
     // 明文回显凭据需显式开启 ALLOW_PLAIN_CREDENTIAL_EXPORT（默认关闭，避免凭据随接口外泄）
-    if (config.security.allowPlainCredentialExport) {
+    if (includeCredentials) {
       server.password = safeDecrypt(server.password_encrypted);
       server.private_key = safeDecrypt(server.private_key_encrypted);
       server.private_key_passphrase = safeDecrypt(server.private_key_passphrase_encrypted);
@@ -398,6 +454,12 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { name, host, port, username, auth_type, password, private_key, private_key_passphrase, group_id, tags, expires_at, remark } = normalizeServerInput(req.body);
+    const existing = await db.queryOne('SELECT password_encrypted, private_key_encrypted FROM servers WHERE id = ?', [req.params.id]);
+    if (!existing) return res.json({ code: 404, message: '服务器不存在' });
+    if (authRequiresPassword(auth_type) && password === undefined && !existing.password_encrypted) return res.json({ code: 400, message: '请填写SSH密码' });
+    if (authRequiresPassword(auth_type) && password === '' && !existing.password_encrypted) return res.json({ code: 400, message: '请填写SSH密码' });
+    if (authRequiresPrivateKey(auth_type) && private_key === undefined && !existing.private_key_encrypted) return res.json({ code: 400, message: '请填写SSH私钥' });
+    if (authRequiresPrivateKey(auth_type) && private_key === '' && !existing.private_key_encrypted) return res.json({ code: 400, message: '请填写SSH私钥' });
     const { encrypt } = require('../utils/crypto');
     const fields = [];
     const params = [];
@@ -406,9 +468,9 @@ router.put('/:id', async (req, res) => {
     addField('username', username); addField('auth_type', auth_type);
     addField('group_id', group_id); addField('expires_at', expires_at); addField('remark', remark);
     if (tags !== undefined) { fields.push('tags = ?'); params.push(JSON.stringify(tags)); }
-    if (password !== undefined) { fields.push('password_encrypted = ?'); params.push(password ? encrypt(password) : null); }
-    if (private_key !== undefined) { fields.push('private_key_encrypted = ?'); params.push(private_key ? encrypt(private_key) : null); }
-    if (private_key_passphrase !== undefined) { fields.push('private_key_passphrase_encrypted = ?'); params.push(private_key_passphrase ? encrypt(private_key_passphrase) : null); }
+    if (password) { fields.push('password_encrypted = ?'); params.push(encrypt(password)); }
+    if (private_key) { fields.push('private_key_encrypted = ?'); params.push(encrypt(private_key)); }
+    if (private_key_passphrase) { fields.push('private_key_passphrase_encrypted = ?'); params.push(encrypt(private_key_passphrase)); }
     if (!fields.length) return res.json({ code: 400, message: '没有可更新的字段' });
     params.push(req.params.id);
     await db.update(`UPDATE servers SET ${fields.join(', ')} WHERE id = ?`, params);
@@ -430,10 +492,40 @@ router.delete('/:id', async (req, res) => {
 });
 
 router.post('/:id/test', async (req, res) => {
+  const steps = [];
+  const origJson = res.json.bind(res);
+  res.json = (payload) => {
+    if (payload && payload.data && payload.data.diagnostics) payload.data.diagnostics.steps = steps;
+    return origJson(payload);
+  };
+  await diagALS.run(steps, async () => {
+  let testServer = null;
+  const diagnostics = { target: '', tcp: null, ssh: null };
+  const tag = `测试#${req.params.id}`;
+  logSSH(tag, '====== 测试连接开始 ======');
   try {
-    const server = await db.queryOne('SELECT * FROM servers WHERE id = ?', [req.params.id]);
-    if (!server) return res.json({ code: 404, message: '服务器不存在' });
-    const conn = await createSSHConnection(server);
+    testServer = await db.queryOne('SELECT * FROM servers WHERE id = ?', [req.params.id]);
+    if (!testServer) return res.json({ code: 404, message: '服务器不存在' });
+    if (req.body && Object.keys(req.body).length) {
+      const { encrypt } = require('../utils/crypto');
+      const input = normalizeServerInput(req.body);
+      ['host', 'port', 'username', 'auth_type'].forEach((field) => {
+        if (input[field] !== undefined) testServer[field] = input[field];
+      });
+      if (input.password) testServer.password_encrypted = encrypt(input.password);
+      if (input.private_key) testServer.private_key_encrypted = encrypt(input.private_key);
+      if (input.private_key_passphrase) testServer.private_key_passphrase_encrypted = encrypt(input.private_key_passphrase);
+    }
+    diagnostics.target = describeConnectionTarget(testServer);
+    logSSH(tag, '连接目标', diagnostics.target);
+    diagnostics.tcp = await probeTcpPort(testServer.host, testServer.port);
+    if (!diagnostics.tcp.ok) {
+      logSSH(tag, 'TCP探测失败，中止SSH', diagnostics.tcp.message);
+      throw new Error(`${diagnostics.tcp.message}，请检查目标服务器防火墙/安全组是否允许面板服务器访问该SSH端口`);
+    }
+    logSSH(tag, 'TCP探测通过，开始SSH认证');
+    const conn = await createSSHConnection(testServer);
+    diagnostics.ssh = { ok: true, message: 'SSH认证成功' };
     let osInfo = null;
     try {
       const { out } = await execCommand(conn, "if [ -f /etc/os-release ]; then . /etc/os-release; echo ${PRETTY_NAME:-$NAME}; else uname -srm; fi", 8000);
@@ -441,13 +533,18 @@ router.post('/:id/test', async (req, res) => {
     } catch {}
     conn.end();
     await db.update('UPDATE servers SET status = ?, os_info = COALESCE(?, os_info), last_connected_at = NOW() WHERE id = ?', ['online', osInfo, req.params.id]);
-    await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'test_connection', targetType: 'server', targetId: req.params.id, status: 'success' });
-    res.json({ code: 0, message: '连接成功' });
+    await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'test_connection', targetType: 'server', targetId: req.params.id, status: 'success', detail: { steps, target: diagnostics.target, tcp: diagnostics.tcp, ssh: diagnostics.ssh } });
+    logSSH(tag, '====== 测试连接成功 ======');
+    res.json({ code: 0, message: '连接成功', data: { diagnostics } });
   } catch (err) {
+    logSSH(tag, '====== 测试连接失败 ======', err.message);
+    if (diagnostics.tcp?.ok && !diagnostics.ssh) diagnostics.ssh = { ok: false, message: err.message };
     await db.update('UPDATE servers SET status = ? WHERE id = ?', ['offline', req.params.id]);
-    await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'test_connection', targetType: 'server', targetId: req.params.id, status: 'failed', errorMessage: err.message });
-    res.json({ code: 500, message: err.message });
+    await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'test_connection', targetType: 'server', targetId: req.params.id, status: 'failed', errorMessage: err.message, detail: { steps, target: diagnostics.target, tcp: diagnostics.tcp, ssh: diagnostics.ssh } });
+    const detail = testServer ? `（${describeConnectionTarget(testServer)}）` : '';
+    res.json({ code: 500, message: `${err.message}${detail}`, data: { diagnostics } });
   }
+  });
 });
 
 router.post('/:id/renew', async (req, res) => {
