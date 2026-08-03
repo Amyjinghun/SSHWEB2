@@ -2,8 +2,10 @@ const express = require('express');
 const fs = require('fs');
 const zlib = require('zlib');
 const { spawn } = require('child_process');
+const multer = require('multer');
 const db = require('../db');
-const { authMiddleware } = require('../middleware/auth');
+const config = require('../config');
+const { authMiddleware, roleMiddleware } = require('../middleware/auth');
 const { createSSHConnection, execCommand, shellQuote } = require('../ssh/connection');
 const { encrypt, decrypt } = require('../utils/crypto');
 const { writeAuditLog } = require('../utils/audit');
@@ -229,6 +231,176 @@ router.delete('/config/tasks/:id', async (req, res) => {
     await db.remove('DELETE FROM config_backup_tasks WHERE id=?', [req.params.id]);
     res.json({ code: 0, message: '已删除' });
   } catch (err) { res.json({ code: 500, message: err.message }); }
+});
+
+// ===== SFTP 辅助 =====
+function getSftp(conn) {
+  return new Promise((resolve, reject) => {
+    conn.sftp((err, sftp) => err ? reject(err) : resolve(sftp));
+  });
+}
+
+// ===== 本地 MySQL 恢复（gunzip → mysql）=====
+function runLocalMysqlRestore(cfg, dbPass, filePath) {
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env };
+    if (dbPass) env.MYSQL_PWD = dbPass;
+    const gunzip = spawn('gunzip', ['-c', filePath]);
+    const mysql = spawn('mysql', [
+      `-h${cfg.db_host || 'localhost'}`,
+      `-P${Number(cfg.db_port) || 3306}`,
+      `-u${cfg.db_username || 'root'}`,
+      cfg.db_name
+    ], { env });
+    let stderr = '';
+    mysql.stderr.on('data', c => { stderr += c.toString(); });
+    gunzip.stderr.on('data', c => { stderr += c.toString(); });
+    gunzip.stdout.pipe(mysql.stdin);
+    let settled = false;
+    const done = (err) => { if (settled) return; settled = true; err ? reject(err) : resolve(); };
+    mysql.on('close', code => done(code !== 0 ? new Error(`mysql 恢复失败: ${stderr || `退出码 ${code}`}`) : null));
+    gunzip.on('error', done);
+    mysql.on('error', done);
+  });
+}
+
+// ===== 备份文件下载 =====
+router.get('/files/:id/download', async (req, res) => {
+  try {
+    const file = await db.queryOne('SELECT * FROM backup_files WHERE id=?', [req.params.id]);
+    if (!file) return res.status(404).json({ code: 404, message: '文件不存在' });
+    const fileName = file.file_name || 'backup.sql.gz';
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+
+    if (file.server_id) {
+      // 远程文件：SSH SFTP 拉取流式返回
+      const server = await db.queryOne('SELECT * FROM servers WHERE id=?', [file.server_id]);
+      const conn = await createSSHConnection(server);
+      const sftp = await getSftp(conn);
+      const stream = sftp.createReadStream(file.file_path);
+      stream.on('error', () => { try { conn.end(); } catch {} });
+      stream.on('close', () => { try { conn.end(); } catch {} });
+      stream.pipe(res);
+    } else {
+      // 本地文件：直接读
+      if (!fs.existsSync(file.file_path)) return res.status(404).json({ code: 404, message: '文件不存在' });
+      fs.createReadStream(file.file_path).pipe(res);
+    }
+    await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'db_backup_download', detail: { file: fileName } });
+  } catch (err) {
+    if (!res.headersSent) res.json({ code: 500, message: err.message });
+  }
+});
+
+// ===== 备份文件恢复 =====
+router.post('/files/:id/restore', roleMiddleware('superadmin', 'admin'), async (req, res) => {
+  try {
+    const file = await db.queryOne(
+      'SELECT bf.*, dbc.db_host, dbc.db_port, dbc.db_username, dbc.db_password_encrypted, dbc.db_name FROM backup_files bf LEFT JOIN db_backup_configs dbc ON bf.config_id = dbc.id WHERE bf.id=?',
+      [req.params.id]
+    );
+    if (!file) return res.json({ code: 404, message: '文件不存在' });
+    if (file.status !== 'success') return res.json({ code: 400, message: '该备份状态不可用' });
+
+    const dbPass = file.db_password_encrypted ? decrypt(file.db_password_encrypted) : '';
+
+    if (file.server_id) {
+      // 远程恢复：SSH 执行 gunzip | mysql
+      const server = await db.queryOne('SELECT * FROM servers WHERE id=?', [file.server_id]);
+      const conn = await createSSHConnection(server);
+      const cmd = `gunzip -c ${shellQuote(file.file_path)} | MYSQL_PWD=${shellQuote(dbPass || '')} mysql -h${shellQuote(file.db_host || 'localhost')} -P${shellQuote(String(Number(file.db_port) || 3306))} -u${shellQuote(file.db_username || 'root')} ${shellQuote(file.db_name)} 2>&1`;
+      const result = await execCommand(conn, cmd);
+      conn.end();
+      if (result.exitCode !== 0) return res.json({ code: 500, message: '恢复失败: ' + result.out });
+    } else {
+      // 本地恢复
+      if (!fs.existsSync(file.file_path)) return res.json({ code: 404, message: '文件不存在' });
+      await runLocalMysqlRestore(file, dbPass, file.file_path);
+    }
+
+    await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'db_backup_restore', detail: { file: file.file_name, db: file.db_name } });
+    res.json({ code: 0, message: '恢复成功' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// ===== 面板数据库导出（SSHWeb 自身库）=====
+router.get('/panel/export', roleMiddleware('superadmin', 'admin'), async (req, res) => {
+  try {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    res.setHeader('Content-Disposition', `attachment; filename="sshweb_panel_${ts}.sql.gz"`);
+    res.setHeader('Content-Type', 'application/gzip');
+
+    const dump = spawn('mysqldump', [
+      `-h${config.mysql.host}`,
+      `-P${config.mysql.port}`,
+      `-u${config.mysql.user}`,
+      config.mysql.database
+    ], { env: { ...process.env, MYSQL_PWD: config.mysql.password } });
+
+    const gzip = zlib.createGzip();
+    let stderr = '';
+    dump.stderr.on('data', c => { stderr += c.toString(); });
+    dump.stdout.pipe(gzip).pipe(res);
+
+    dump.on('error', err => {
+      console.error('面板导出失败:', err.message);
+      if (!res.headersSent) res.status(500).json({ code: 500, message: err.message });
+    });
+    dump.on('close', code => {
+      if (code !== 0 && stderr) console.error('mysqldump stderr:', stderr);
+    });
+
+    await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'panel_db_export' });
+  } catch (err) {
+    if (!res.headersSent) res.json({ code: 500, message: err.message });
+  }
+});
+
+// ===== 面板数据库导入 =====
+const panelUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
+router.post('/panel/import', roleMiddleware('superadmin', 'admin'), panelUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.json({ code: 400, message: '请上传 .sql.gz 文件' });
+
+    const pathModule = require('path');
+    const os = require('os');
+    const tmpFile = pathModule.join(os.tmpdir(), `sshweb_import_${Date.now()}.sql.gz`);
+    await fs.promises.writeFile(tmpFile, req.file.buffer);
+
+    const env = { ...process.env, MYSQL_PWD: config.mysql.password };
+    const gunzip = spawn('gunzip', ['-c', tmpFile]);
+    const mysql = spawn('mysql', [
+      `-h${config.mysql.host}`,
+      `-P${config.mysql.port}`,
+      `-u${config.mysql.user}`,
+      config.mysql.database
+    ], { env });
+
+    let stderr = '';
+    mysql.stderr.on('data', c => { stderr += c.toString(); });
+    gunzip.stdout.pipe(mysql.stdin);
+
+    await new Promise((resolve, reject) => {
+      let settled = false;
+      const done = (err) => {
+        if (settled) return;
+        settled = true;
+        fs.promises.unlink(tmpFile).catch(() => {});
+        err ? reject(err) : resolve();
+      };
+      mysql.on('close', code => done(code !== 0 ? new Error(`导入失败: ${stderr || `退出码 ${code}`}`) : null));
+      gunzip.on('error', done);
+      mysql.on('error', done);
+    });
+
+    await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'panel_db_import', detail: { file: req.file.originalname, size: req.file.size } });
+    res.json({ code: 0, message: '导入成功，建议刷新页面重新登录' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
 });
 
 module.exports = router;

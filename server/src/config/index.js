@@ -90,5 +90,11 @@ module.exports = {
     enableMemoryAlert: parseBool(process.env.ALERT_ENABLE_MEMORY, true),
     enableDiskAlert: parseBool(process.env.ALERT_ENABLE_DISK, false),
     repeatHours: parseInt(process.env.ALERT_REPEAT_HOURS, 10) || 12
+  },
+  llm: {
+    enabled: parseBool(process.env.LLM_ENABLED, false),
+    apiKey: process.env.LLM_API_KEY || '',
+    baseUrl: process.env.LLM_BASE_URL || 'https://api.anthropic.com',
+    model: process.env.LLM_MODEL || 'claude-haiku-4-5-20251001'
   }
 };

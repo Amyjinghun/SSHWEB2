@@ -74,9 +74,26 @@
             <span :title="'负载 ' + (server.load_avg || '-')">负载 {{ server.load_avg || '-' }}</span>
             <span :title="server.uptime || ''">{{ server.uptime || '-' }}</span>
           </div>
+
+          <!-- 系统信息（公开页只显示非敏感字段，公网IP/DNS/位置已在后端过滤） -->
+          <div class="pm-info-grid" v-if="server._sys && Object.keys(server._sys).length">
+            <div class="pm-info-cell"><span>内核</span><strong :title="server._sys.kernel">{{ server._sys.kernel || '-' }}</strong></div>
+            <div class="pm-info-cell"><span>架构</span><strong>{{ server._sys.arch || '-' }}</strong></div>
+            <div class="pm-info-cell"><span>CPU</span><strong>{{ server._sys.cpu_cores || '?' }}核</strong></div>
+            <div class="pm-info-cell"><span>拥塞</span><strong>{{ server._sys.tcp_congestion || '-' }}</strong></div>
+          </div>
+
           <div class="pm-network">
             <span>↓ {{ bytes(server.network_rx_bytes) }}</span>
             <span>↑ {{ bytes(server.network_tx_bytes) }}</span>
+          </div>
+          <div class="pm-network">
+            <span>TCP {{ server.tcp_connections ?? '-' }}</span>
+            <span>UDP {{ server.udp_connections ?? '-' }}</span>
+          </div>
+          <div class="pm-expiry" v-if="server._expiry" :class="server._expiry.className">
+            <span>到期 {{ server._expiry.date }}</span>
+            <strong>{{ server._expiry.text }}</strong>
           </div>
         </div>
       </div>
@@ -116,7 +133,13 @@ async function loadMonitor() {
   try {
     const res = await api.get(`/api/public/monitor/${route.params.shareKey}`)
     if (res.code === 0) {
-      servers.value = res.data.servers || []
+      servers.value = (res.data.servers || []).map(s => {
+        let info = s.system_info
+        if (typeof info === 'string') { try { info = JSON.parse(info) } catch { info = {} } }
+        s._sys = info || {}
+        s._expiry = expiryDisplay(s.expires_at)
+        return s
+      })
       summary.value = res.data.summary || summary.value
       updatedAt.value = res.data.generated_at || new Date().toISOString()
       error.value = ''
@@ -170,6 +193,18 @@ function bytes(v) {
 }
 function statusText(status) {
   return status === 'online' ? '在线' : status === 'offline' ? '离线' : '未知'
+}
+
+function expiryDisplay(expiresAt) {
+  if (!expiresAt) return null
+  const date = String(expiresAt).slice(0, 10)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const days = Math.round((new Date(date + 'T00:00:00') - today) / 86400000)
+  if (days < 0) return { date, text: `已过期 ${Math.abs(days)} 天`, className: 'expired' }
+  if (days === 0) return { date, text: '今天到期', className: 'expired' }
+  if (days <= 30) return { date, text: `剩余 ${days} 天`, className: 'expiring' }
+  return { date, text: `剩余 ${days} 天`, className: '' }
 }
 </script>
 
@@ -359,6 +394,56 @@ h1 {
   margin-top: 6px;
   color: #06b6d4;
   font-size: 11px;
+}
+.pm-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+  padding: 8px 0 4px;
+  margin-top: 4px;
+  border-top: 1px dashed #e8ecf4;
+}
+.pm-info-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  font-size: 11px;
+}
+.pm-info-cell span {
+  flex-shrink: 0;
+  color: #94a3b8;
+}
+.pm-info-cell strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #334155;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-expiry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+.pm-expiry strong {
+  font-weight: 600;
+}
+.pm-expiry.expiring {
+  background: #fffbeb;
+  color: #b45309;
+}
+.pm-expiry.expired {
+  background: #fef2f2;
+  color: #dc2626;
 }
 @media (max-width: 768px) {
   .pm-header { align-items: flex-start; flex-direction: column; padding: 16px; }

@@ -166,6 +166,24 @@ function buildRuleName(rule) {
   return `${type} ≥ ${threshold}（${level}）`
 }
 
+function buildCondition(form) {
+  const metricMap = {
+    cpu_high: 'cpu_usage',
+    memory_high: 'memory_usage',
+    disk_high: 'disk_usage'
+  }
+  if (metricMap[form.type]) {
+    return { metric: metricMap[form.type], operator: '>=', threshold: Number(form.conditionValue) || 0 }
+  }
+  if (form.type === 'server_offline') {
+    return { metric: 'status', operator: '==', threshold: 'offline' }
+  }
+  if (form.type === 'cert_expiring') {
+    return { metric: 'cert_days_left', operator: '<=', threshold: Number(form.conditionValue) || 0 }
+  }
+  return { threshold: Number(form.conditionValue) || 0 }
+}
+
 function displayRuleName(rule) {
   return rule.name || buildRuleName(rule)
 }
@@ -182,7 +200,7 @@ async function saveRule() {
   const payload = {
     ...ruleForm.value,
     name: generatedRuleName.value,
-    condition: { threshold: ruleForm.value.conditionValue }
+    condition: buildCondition(ruleForm.value)
   }
   const res = ruleEditing.value
     ? await api.put(`/api/alerts/rules/${ruleEditing.value.id}`, payload)

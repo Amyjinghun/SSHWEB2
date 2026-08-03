@@ -112,11 +112,39 @@
             <span>负载 {{ server.load_avg || '-' }}</span>
             <span :title="server.uptime || ''">{{ server.uptime || '-' }}</span>
           </div>
+
+          <!-- 系统信息 -->
+          <div class="info-grid" v-if="server._sys && Object.keys(server._sys).length">
+            <div class="info-cell"><span>内核</span><strong :title="server._sys.kernel">{{ server._sys.kernel || '-' }}</strong></div>
+            <div class="info-cell"><span>架构</span><strong>{{ server._sys.arch || '-' }}</strong></div>
+            <div class="info-cell"><span>CPU</span><strong>{{ server._sys.cpu_cores || '?' }}核</strong></div>
+            <div class="info-cell"><span>拥塞</span><strong>{{ server._sys.tcp_congestion || '-' }}</strong></div>
+            <div class="info-cell full" v-if="server._sys.cpu_model"><span>型号</span><strong :title="server._sys.cpu_model">{{ server._sys.cpu_model }}</strong></div>
+          </div>
+
           <div class="network-row">
             <span>下行 {{ bytes(server.network_rx_bytes) }}</span>
             <span>上行 {{ bytes(server.network_tx_bytes) }}</span>
           </div>
+          <div class="network-row">
+            <span>TCP {{ server.tcp_connections ?? '-' }}</span>
+            <span>UDP {{ server.udp_connections ?? '-' }}</span>
+          </div>
+
+          <!-- 公网信息（内部页才显示） -->
+          <div class="info-grid public-grid" v-if="hasPublicInfo(server._sys)">
+            <div class="info-cell" v-if="server._sys.public_ipv4"><span>IPv4</span><strong>{{ server._sys.public_ipv4 }}</strong></div>
+            <div class="info-cell" v-if="server._sys.public_ipv6"><span>IPv6</span><strong :title="server._sys.public_ipv6">{{ server._sys.public_ipv6 }}</strong></div>
+            <div class="info-cell" v-if="server._sys.geo_location"><span>位置</span><strong>{{ server._sys.geo_location }}</strong></div>
+            <div class="info-cell" v-if="server._sys.isp"><span>运营商</span><strong>{{ server._sys.isp }}</strong></div>
+            <div class="info-cell full" v-if="server._sys.dns_servers"><span>DNS</span><strong :title="server._sys.dns_servers">{{ server._sys.dns_servers }}</strong></div>
+          </div>
+
           <div class="fresh-row">最后连接 {{ formatTime(server.last_connected_at) }}</div>
+          <div class="expiry-row" v-if="server._expiry" :class="server._expiry.className">
+            <span>到期 {{ server._expiry.date }}</span>
+            <strong>{{ server._expiry.text }}</strong>
+          </div>
         </div>
       </div>
     </el-card>
@@ -189,7 +217,13 @@ function connectMonitor() {
     loaded.value = true
   })
   socket.on('snapshot', (list) => {
-    servers.value = list || []
+    servers.value = (list || []).map(s => {
+      let info = s.system_info
+      if (typeof info === 'string') { try { info = JSON.parse(info) } catch { info = {} } }
+      s._sys = info || {}
+      s._expiry = expiryDisplay(s.expires_at)
+      return s
+    })
     updatedAt.value = new Date().toISOString()
     loaded.value = true
   })
@@ -251,6 +285,22 @@ function bytes(value) {
 function formatTime(value) {
   if (!value) return '-'
   return String(value).replace('T', ' ').replace('.000Z', '').replace('Z', '')
+}
+
+function hasPublicInfo(sys) {
+  return sys && (sys.public_ipv4 || sys.public_ipv6 || sys.geo_location || sys.isp || sys.dns_servers)
+}
+
+function expiryDisplay(expiresAt) {
+  if (!expiresAt) return null
+  const date = String(expiresAt).slice(0, 10)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const days = Math.round((new Date(date + 'T00:00:00') - today) / 86400000)
+  if (days < 0) return { date, text: `已过期 ${Math.abs(days)} 天`, className: 'expired' }
+  if (days === 0) return { date, text: '今天到期', className: 'expired' }
+  if (days <= 30) return { date, text: `剩余 ${days} 天`, className: 'expiring' }
+  return { date, text: `剩余 ${days} 天`, className: '' }
 }
 </script>
 
@@ -536,6 +586,72 @@ function formatTime(value) {
 .fresh-row {
   margin-top: 6px;
   display: block;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+  padding: 8px 0 4px;
+  margin-top: 4px;
+  border-top: 1px dashed #e6edf5;
+}
+
+.info-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.info-cell span {
+  flex-shrink: 0;
+  color: #94a3b8;
+}
+
+.info-cell strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #334155;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.info-cell.full {
+  grid-column: 1 / -1;
+}
+
+.public-grid .info-cell strong {
+  color: #4f6ef7;
+}
+
+.expiry-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.expiry-row strong {
+  font-weight: 600;
+}
+
+.expiry-row.expiring {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.expiry-row.expired {
+  background: #fef2f2;
+  color: #dc2626;
 }
 
 @media (max-width: 900px) {

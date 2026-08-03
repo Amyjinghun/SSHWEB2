@@ -23,6 +23,13 @@
               <span class="setting-hint">{{ monitorIntervalHint }}</span>
             </el-form-item>
             <el-form-item label="状态检测并发数"><el-input-number v-model="settings.server_monitor_concurrency" :min="1" :max="30" /></el-form-item>
+            <el-form-item label="IP查询服务">
+              <el-select v-model="settings.ip_query_provider" style="width:280px">
+                <el-option label="ipinfo.io（国外 / HTTPS）" value="ipinfo" />
+                <el-option label="ip-api.com（国内 / HTTP）" value="ipapi" />
+              </el-select>
+              <span class="setting-hint">用于采集公网IP/位置/运营商，国内服务器选 ip-api.com</span>
+            </el-form-item>
           </el-form>
         </el-tab-pane>
         <el-tab-pane label="公开监控">

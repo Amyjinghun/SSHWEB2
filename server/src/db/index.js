@@ -38,8 +38,17 @@ async function ensureSchema() {
   await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN disk_used_mb BIGINT NULL AFTER disk_total_mb');
   await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN network_rx_bytes BIGINT NULL AFTER disk_used_mb');
   await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN network_tx_bytes BIGINT NULL AFTER network_rx_bytes');
+  // 监控卡片扩展：动态网络指标 + 静态系统信息（低频采集，每 6 小时一次）
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN tcp_connections INT NULL AFTER network_tx_bytes');
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN udp_connections INT NULL AFTER tcp_connections');
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN system_info JSON NULL AFTER udp_connections');
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN static_info_updated_at DATETIME NULL AFTER system_info');
   await ignoreDuplicateColumn('ALTER TABLE server_metrics ADD COLUMN network_rx_bytes BIGINT NULL AFTER disk_usage');
   await ignoreDuplicateColumn('ALTER TABLE server_metrics ADD COLUMN network_tx_bytes BIGINT NULL AFTER network_rx_bytes');
+  // 规则引擎 agent：alert_rules 绑定命令模板动作，alert_logs 记录动作结果与 LLM 诊断
+  await ignoreDuplicateColumn('ALTER TABLE alert_rules ADD COLUMN action_ids JSON NULL COMMENT "命令模板 ID 数组，命中时在目标服务器执行" AFTER notify_channels');
+  await ignoreDuplicateColumn('ALTER TABLE alert_logs ADD COLUMN action_results TEXT NULL COMMENT "动作执行结果 JSON" AFTER notify_result');
+  await ignoreDuplicateColumn('ALTER TABLE alert_logs ADD COLUMN diagnosis MEDIUMTEXT NULL COMMENT "LLM 诊断结果（可选）" AFTER action_results');
 }
 
 async function query(sql, params) {

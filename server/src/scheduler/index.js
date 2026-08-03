@@ -2,7 +2,8 @@ const cron = require('node-cron');
 const db = require('../db');
 const { createSSHConnection, execCommand, isDangerousCommand } = require('../ssh/connection');
 const config = require('../config');
-const { createAndNotifyAlert, getAlertNumber, getAlertBoolean } = require('../services/telegram');
+const { createAndNotifyAlert, getAlertNumber, getAlertBoolean, getSettingValue } = require('../services/telegram');
+const ruleEngine = require('../services/rule-engine');
 
 let runningSchedulers = [];
 let statusCheckRunning = false;
@@ -76,6 +77,9 @@ UPTIME_INFO=$(uptime -p 2>/dev/null || uptime 2>/dev/null || printf '-')
 
 printf 'OS_INFO=%s\n' "$OS_INFO"
 printf 'UPTIME=%s\n' "$UPTIME_INFO"
+
+# TCP/UDP 连接数（inuse），优先 /proc/net/sockstat 不依赖 ss 命令
+awk '/^TCP:/{tcp=$3} /^UDP:/{udp=$3} END{printf "TCP_CONN=%d\nUDP_CONN=%d\n", tcp+0, udp+0}' /proc/net/sockstat 2>/dev/null || printf 'TCP_CONN=0\nUDP_CONN=0\n'
 `;
 
 function n(value, fallback = 0) {
@@ -149,8 +153,88 @@ async function collectServerMetrics(conn) {
     netTxBytes: n(kv.NET_TX_BYTES, 0),
     loadAvg: kv.LOAD_AVG || '-',
     uptime: kv.UPTIME || '-',
-    osInfo: (kv.OS_INFO || '').slice(0, 255)
+    osInfo: (kv.OS_INFO || '').slice(0, 255),
+    tcpConnections: n(kv.TCP_CONN, 0),
+    udpConnections: n(kv.UDP_CONN, 0)
   };
+}
+
+// 静态系统信息采集间隔：6 小时（内核/架构/DNS/公网IP/位置等几乎不变，低频采即可）
+const STATIC_INFO_INTERVAL_MS = 6 * 3600 * 1000;
+
+const STATIC_INFO_SCRIPT = String.raw`#!/bin/sh
+LC_ALL=C
+export LC_ALL
+
+KERNEL=$(uname -r 2>/dev/null || echo '-')
+ARCH=$(uname -m 2>/dev/null || echo '-')
+CPU_CORES=$(nproc 2>/dev/null || grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo '0')
+CPU_MODEL=$(awk -F': ' '/^model name/{print $2; exit}' /proc/cpuinfo 2>/dev/null | head -c 120)
+[ -z "$CPU_MODEL" ] && CPU_MODEL='-'
+DNS_SERVERS=$(grep -E '^[[:space:]]*nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}' | head -3 | tr '\n' ',' | sed 's/,$//')
+[ -z "$DNS_SERVERS" ] && DNS_SERVERS='-'
+TCP_CONGESTION=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo '-')
+
+# 公网信息（超时 3 秒，失败留空；内网机器访问不了外网这几项就空着）
+PUBLIC_INFO=$(curl -4 -s --max-time 3 '__IPINFO_URL__' 2>/dev/null | tr -d '\n\r')
+PUBLIC_IPV6=$(curl -6 -s --max-time 3 'https://api6.ipify.org' 2>/dev/null | tr -d '\n\r')
+
+printf 'KERNEL=%s\n' "$KERNEL"
+printf 'ARCH=%s\n' "$ARCH"
+printf 'CPU_CORES=%s\n' "$CPU_CORES"
+printf 'CPU_MODEL=%s\n' "$CPU_MODEL"
+printf 'DNS_SERVERS=%s\n' "$DNS_SERVERS"
+printf 'TCP_CONGESTION=%s\n' "$TCP_CONGESTION"
+printf 'PUBLIC_INFO=%s\n' "$PUBLIC_INFO"
+printf 'PUBLIC_IPV6=%s\n' "$PUBLIC_IPV6"
+`;
+
+function buildStaticInfoCommand(provider) {
+  // ipinfo.io: HTTPS，免费 50000 次/月，国内可能不可达
+  // ip-api.com: HTTP，免费 45 次/分钟，国内可达
+  const url = provider === 'ipapi'
+    ? 'http://ip-api.com/json/?fields=query,city,regionName,country,isp'
+    : 'https://ipinfo.io/json';
+  const script = STATIC_INFO_SCRIPT.replace('__IPINFO_URL__', url);
+  return `sh -s <<'__SSHWEB_STATIC__'\n${script}\n__SSHWEB_STATIC__`;
+}
+
+async function collectStaticInfo(conn) {
+  const provider = await getSettingValue('ip_query_provider', 'ipinfo');
+  const { out } = await execCommand(conn, buildStaticInfoCommand(provider), 30000);
+  const kv = parseKeyValueOutput(out);
+  let p = {};
+  try { p = JSON.parse(kv.PUBLIC_INFO || '{}'); } catch {}
+  // 兼容两个 API 的字段名：ipinfo.io(ip/region/org) vs ip-api.com(query/regionName/isp)
+  const ipv4 = p.ip || p.query || '';
+  const region = p.region || p.regionName || '';
+  const org = p.org || p.isp || '';
+  return {
+    kernel: kv.KERNEL || '-',
+    arch: kv.ARCH || '-',
+    cpu_cores: n(kv.CPU_CORES, 0),
+    cpu_model: kv.CPU_MODEL || '-',
+    dns_servers: kv.DNS_SERVERS || '-',
+    tcp_congestion: kv.TCP_CONGESTION || '-',
+    public_ipv4: ipv4,
+    public_ipv6: kv.PUBLIC_IPV6 || '',
+    geo_location: [p.city, region, p.country].filter(Boolean).join(', '),
+    isp: org
+  };
+}
+
+// 低频采集：距上次采集超过 6 小时才采，用现有 SSH 连接不额外开。失败不影响主流程。
+async function maybeCollectStaticInfo(server, conn) {
+  const last = server.static_info_updated_at ? new Date(server.static_info_updated_at).getTime() : 0;
+  if (Date.now() - last < STATIC_INFO_INTERVAL_MS) return false;
+  try {
+    const info = await collectStaticInfo(conn);
+    await db.update('UPDATE servers SET system_info = ?, static_info_updated_at = NOW() WHERE id = ?', [JSON.stringify(info), server.id]);
+    return true;
+  } catch (err) {
+    console.error(`[静态信息采集失败 ${server.name || server.host}]:`, err.message);
+    return false;
+  }
 }
 
 async function checkMetricAlerts(server, metrics) {
@@ -288,15 +372,20 @@ async function checkOneServer(server) {
     );
 
     await db.update(
-      "UPDATE servers SET status='online', cpu_usage=?, memory_usage=?, disk_usage=?, os_info=COALESCE(?, os_info), uptime=?, load_avg=?, mem_total_mb=?, mem_used_mb=?, disk_total_mb=?, disk_used_mb=?, network_rx_bytes=?, network_tx_bytes=?, last_connected_at=NOW() WHERE id=?",
-      [metrics.cpu, metrics.memUsage, metrics.diskUsage, metrics.osInfo || null, metrics.uptime, metrics.loadAvg, metrics.memTotal, metrics.memUsed, metrics.diskTotal, metrics.diskUsed, metrics.netRxBytes, metrics.netTxBytes, server.id]
+      "UPDATE servers SET status='online', cpu_usage=?, memory_usage=?, disk_usage=?, os_info=COALESCE(?, os_info), uptime=?, load_avg=?, mem_total_mb=?, mem_used_mb=?, disk_total_mb=?, disk_used_mb=?, network_rx_bytes=?, network_tx_bytes=?, tcp_connections=?, udp_connections=?, last_connected_at=NOW() WHERE id=?",
+      [metrics.cpu, metrics.memUsage, metrics.diskUsage, metrics.osInfo || null, metrics.uptime, metrics.loadAvg, metrics.memTotal, metrics.memUsed, metrics.diskTotal, metrics.diskUsed, metrics.netRxBytes, metrics.netTxBytes, metrics.tcpConnections, metrics.udpConnections, server.id]
     );
 
     if (server.status !== 'online') {
       await db.insert('INSERT INTO server_status_changes (server_id, old_status, new_status) VALUES (?, ?, ?)', [server.id, server.status || 'unknown', 'online']);
     }
 
+    // 低频采集静态系统信息（内核/架构/公网IP/位置等，6 小时一次，复用当前 SSH 连接）
+    await maybeCollectStaticInfo(server, conn);
+
     await checkMetricAlerts(server, metrics);
+    // 规则引擎 agent：评估 alert_rules 自定义规则（自带总开关，与上面硬编码规则并存）
+    await ruleEngine.evaluateServer(server, metrics);
     await db.remove('DELETE FROM server_metrics WHERE server_id=? AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)', [server.id]);
 
     return { ok: true, metrics };

@@ -7,7 +7,7 @@
       </div>
       <el-table :data="users" stripe>
         <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column prop="username" label="用户名" width="120" />
+        <el-table-column prop="username" label="用户名" min-width="140" show-overflow-tooltip />
         <el-table-column prop="role" label="角色" width="120">
           <template #default="{ row }">
             <el-tag :type="row.role==='superadmin'?'danger':'primary'" size="small" effect="plain">{{ row.role === 'superadmin' ? '超级管理员' : '管理员' }}</el-tag>
@@ -16,8 +16,8 @@
         <el-table-column prop="status" label="状态" width="80">
           <template #default="{ row }"><el-tag :type="row.status?'success':'danger'" size="small" effect="plain">{{ row.status ? '启用' : '禁用' }}</el-tag></template>
         </el-table-column>
-        <el-table-column prop="last_login_at" label="最后登录" width="170" />
-        <el-table-column prop="created_at" label="创建时间" width="170" />
+        <el-table-column prop="last_login_at" label="最后登录" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="created_at" label="创建时间" min-width="180" show-overflow-tooltip />
         <el-table-column label="操作" width="220">
           <template #default="{ row }">
             <el-button size="small" @click="showDialog(row)">编辑</el-button>
@@ -28,7 +28,7 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="editing ? '编辑用户' : '新增用户'" width="400px">
+    <el-dialog v-model="dialogVisible" :title="editing ? '编辑用户' : '新增用户'" width="480px" class="user-dialog">
       <el-form :model="form" label-width="80px">
         <el-form-item label="用户名"><el-input v-model="form.username" :disabled="!!editing" /></el-form-item>
         <el-form-item v-if="!editing" label="密码"><el-input v-model="form.password" type="password" /></el-form-item>
@@ -66,6 +66,10 @@ async function del(row) { await ElMessageBox.confirm('确定删除？', '确认'
 </script>
 
 <style scoped>
-.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; }
 .page-title { font-weight: 600; font-size: 16px; color: #1e293b; }
+@media (max-width: 768px) {
+  .toolbar { flex-direction: column; align-items: flex-start; }
+  .user-dialog { width: 95% !important; }
+}
 </style>

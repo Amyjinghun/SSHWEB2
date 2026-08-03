@@ -236,7 +236,7 @@ async function buildAlertText({ title, content, templateKey, variables }) {
   return `🚨 <b>${escapeHtml(title)}</b>\n\n${escapeHtml(content)}\n\n时间：${new Date().toLocaleString('zh-CN', { hour12: false })}`;
 }
 
-async function createAndNotifyAlert({ serverId = null, level = 'warning', title, content, templateKey = '', variables = {} }) {
+async function createAndNotifyAlert({ serverId = null, level = 'warning', title, content, templateKey = '', variables = {}, ruleId = null }) {
   const repeatHours = await getAlertNumber('alert_repeat_hours', config.alerts.repeatHours);
   if (await recentAlertExists(serverId, title, repeatHours)) {
     return { skipped: true, message: '重复告警已抑制' };
@@ -249,11 +249,11 @@ async function createAndNotifyAlert({ serverId = null, level = 'warning', title,
   } catch (err) {
     notifyResult = `Telegram 发送失败：${err.message}`;
   }
-  await db.insert(
-    'INSERT INTO alert_logs (server_id, level, title, content, status, notify_result) VALUES (?,?,?,?,?,?)',
-    [serverId, level, title, content, 'active', notifyResult]
+  const alertLogId = await db.insert(
+    'INSERT INTO alert_logs (server_id, rule_id, level, title, content, status, notify_result) VALUES (?,?,?,?,?,?,?)',
+    [serverId, ruleId, level, title, content, 'active', notifyResult]
   );
-  return { skipped: false, notifyResult };
+  return { skipped: false, notifyResult, alertLogId };
 }
 
 module.exports = {
@@ -262,6 +262,7 @@ module.exports = {
   createAndNotifyAlert,
   getAlertNumber,
   getAlertBoolean,
+  getSettingValue,
   DEFAULT_TEMPLATES,
   renderTemplate
 };

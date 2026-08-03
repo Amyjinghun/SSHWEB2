@@ -205,8 +205,7 @@ SSHWEB2/
 ├── database/                  # 数据库脚本
 │   ├── schema.sql             # 表结构（16 张表）
 │   └── seed.sql               # 初始数据（管理员、分组、命令模板、设置）
-├── setup.sh                   # Debian 统一安装/卸载脚本
-├── docker-install.sh          # Docker 安装脚本
+├── setup.sh                   # Debian 统一安装/卸载脚本（含 PM2 和 Docker 模式）
 ├── Dockerfile                 # Docker 镜像
 └── docker-compose.yml         # Docker Compose 配置
 ```

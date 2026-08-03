@@ -47,11 +47,25 @@ router.get('/monitor/:shareKey', publicLimiter, async (req, res) => {
       SELECT
         s.name, s.status, s.os_info, s.cpu_usage, s.memory_usage, s.disk_usage,
         s.uptime, s.load_avg, s.mem_total_mb, s.mem_used_mb, s.disk_total_mb, s.disk_used_mb,
-        s.network_rx_bytes, s.network_tx_bytes, g.name AS group_name
+        s.network_rx_bytes, s.network_tx_bytes,
+        s.tcp_connections, s.udp_connections, s.system_info, s.expires_at,
+        g.name AS group_name
       FROM servers s
       LEFT JOIN server_groups g ON s.group_id = g.id
       ORDER BY FIELD(s.status, 'online', 'unknown', 'offline'), s.name ASC
     `);
+
+    // 公开页只暴露非敏感的系统信息：隐去公网 IP / DNS / 地理位置 / 运营商
+    const SAFE_SYSTEM_KEYS = ['kernel', 'arch', 'cpu_cores', 'cpu_model', 'tcp_congestion'];
+    servers.forEach(server => {
+      let info = server.system_info;
+      if (typeof info === 'string') { try { info = JSON.parse(info); } catch { info = {}; } }
+      if (!info || typeof info !== 'object') info = {};
+      server.system_info = SAFE_SYSTEM_KEYS.reduce((acc, k) => {
+        if (info[k] !== undefined && info[k] !== '' && info[k] !== '-') acc[k] = info[k];
+        return acc;
+      }, {});
+    });
 
     const online = servers.filter(server => server.status === 'online');
     const critical = servers.filter(server =>

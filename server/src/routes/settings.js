@@ -49,6 +49,7 @@ const DEFAULT_SETTINGS = {
   server_monitor_mode: 'realtime',
   server_check_interval: '10',
   server_monitor_concurrency: '5',
+  ip_query_provider: 'ipinfo',
   public_monitor_enabled: 'false',
   public_monitor_key: ''
 };
