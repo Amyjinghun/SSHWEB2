@@ -55,53 +55,48 @@
             暂无服务器，去<el-link type="primary" underline="never" @click="router.push('/servers')">添加服务器</el-link>
           </div>
           <div v-else class="monitor-grid">
-            <div
+            <article
               v-for="s in filteredServers"
               :key="s.id"
-              class="server-card"
+              class="mc-card"
               :class="cardHealth(s).className"
-              :style="{ '--health-color': cardHealth(s).color }"
               @click="openMonitor(s)"
             >
-              <div class="sc-head">
-                <span class="sc-name" :title="s.name">{{ s.name }}</span>
-                <span class="sc-status" :class="s.status">
-                  <i class="status-dot"></i>{{ statusText(s.status) }}
-                </span>
-              </div>
-              <div class="sc-meta">
-                <span class="sc-os" :title="s.os_info">{{ s.os_info || '-' }}</span>
-                <span v-if="s.group_name" class="sc-tag">{{ s.group_name }}</span>
-              </div>
-
-              <div class="sc-bar-row">
-                <div class="sc-bar-label"><span>CPU</span><span>{{ pct(s.cpu_usage) }}%</span></div>
-                <div class="sc-bar"><div class="sc-bar-fill" :style="{ width: pct(s.cpu_usage) + '%', background: usageColor(s.cpu_usage) }"></div></div>
-              </div>
-              <div class="sc-bar-row">
-                <div class="sc-bar-label">
+              <header class="mc-head">
+                <div class="mc-title-row">
+                  <strong :title="s.name">{{ s.name }}</strong>
+                  <span v-if="s.group_name" class="mc-tag">{{ s.group_name }}</span>
+                  <span class="mc-status" :class="s.status"><i></i>{{ statusText(s.status) }}</span>
+                </div>
+                <div class="mc-host">{{ s.os_info || '-' }}</div>
+              </header>
+              <div class="mc-metrics">
+                <div class="mc-metric">
+                  <span>CPU</span>
+                  <strong :class="pct(s.cpu_usage) >= 90 ? 'high' : pct(s.cpu_usage) >= 70 ? 'warn' : ''">{{ pct(s.cpu_usage) }}%</strong>
+                  <div class="mc-bar"><div :style="{ width: pct(s.cpu_usage) + '%', background: usageColor(s.cpu_usage) }"></div></div>
+                  <small>{{ pct(s.cpu_usage) }}%</small>
+                </div>
+                <div class="mc-metric">
                   <span>内存</span>
-                  <span>{{ pct(s.memory_usage) }}% <em>{{ mb(s.mem_used_mb) }} / {{ mb(s.mem_total_mb) }}</em></span>
+                  <strong :class="pct(s.memory_usage) >= 90 ? 'high' : pct(s.memory_usage) >= 70 ? 'warn' : ''">{{ pct(s.memory_usage) }}%</strong>
+                  <div class="mc-bar"><div :style="{ width: pct(s.memory_usage) + '%', background: usageColor(s.memory_usage) }"></div></div>
+                  <small>{{ mb(s.mem_used_mb) }} / {{ mb(s.mem_total_mb) }}</small>
                 </div>
-                <div class="sc-bar"><div class="sc-bar-fill" :style="{ width: pct(s.memory_usage) + '%', background: usageColor(s.memory_usage) }"></div></div>
-              </div>
-              <div class="sc-bar-row">
-                <div class="sc-bar-label">
+                <div class="mc-metric">
                   <span>磁盘</span>
-                  <span>{{ pct(s.disk_usage) }}% <em>{{ mb(s.disk_used_mb) }} / {{ mb(s.disk_total_mb) }}</em></span>
+                  <strong :class="pct(s.disk_usage) >= 90 ? 'high' : pct(s.disk_usage) >= 70 ? 'warn' : ''">{{ pct(s.disk_usage) }}%</strong>
+                  <div class="mc-bar"><div :style="{ width: pct(s.disk_usage) + '%', background: usageColor(s.disk_usage) }"></div></div>
+                  <small>{{ mb(s.disk_used_mb) }} / {{ mb(s.disk_total_mb) }}</small>
                 </div>
-                <div class="sc-bar"><div class="sc-bar-fill" :style="{ width: pct(s.disk_usage) + '%', background: usageColor(s.disk_usage) }"></div></div>
               </div>
-
-              <div class="sc-footer">
-                <span :title="'负载 ' + (s.load_avg || '-')">负载 {{ s.load_avg || '-' }}</span>
-                <span :title="s.uptime || ''">{{ s.uptime || '-' }}</span>
+              <div class="mc-details">
+                <div><span>负载</span><strong>{{ s.load_avg || '-' }}</strong></div>
+                <div><span>运行</span><strong :title="s.uptime || ''">{{ s.uptime || '-' }}</strong></div>
+                <div><span>下行</span><strong>{{ bytes(s.network_rx_bytes) }}</strong></div>
+                <div><span>上行</span><strong>{{ bytes(s.network_tx_bytes) }}</strong></div>
               </div>
-              <div class="sc-network">
-                <span>↓ {{ bytes(s.network_rx_bytes) }}</span>
-                <span>↑ {{ bytes(s.network_tx_bytes) }}</span>
-              </div>
-            </div>
+            </article>
           </div>
         </div>
       </div>
@@ -165,7 +160,7 @@ const pieChartRef = ref(null)
 const barChartRef = ref(null)
 
 const statCards = ref([
-  { label: '服务器总数', value: 0, icon: 'Server', color: '#4f6ef7', tint: '#eef2ff' },
+  { label: '服务器总数', value: 0, icon: 'Server', color: '#0891b2', tint: '#eef2ff' },
   { label: '在线服务器', value: 0, icon: 'CircleCheck', color: '#22c55e', tint: '#ecfdf5' },
   { label: '离线服务器', value: 0, icon: 'CircleClose', color: '#ef4444', tint: '#fef2f2' },
   { label: '告警数量', value: 0, icon: 'Bell', color: '#f59e0b', tint: '#fffbeb' },
@@ -508,146 +503,54 @@ function renderBarChart(stats) {
 
 .monitor-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
 }
-.server-card {
-  background: #f8fafc;
-  border: 1px solid #e8ecf4;
-  border-left: 4px solid var(--health-color);
-  border-radius: 12px;
-  padding: 14px 14px 14px 12px;
+
+.mc-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid #0891b2;
+  border-radius: var(--radius-md);
+  box-shadow: var(--card-shadow);
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+  transition: box-shadow var(--transition-normal), transform var(--transition-normal);
 }
-.server-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
-  border-color: #c7d2fe;
-  border-left-color: var(--health-color);
-}
-.server-card.normal { background: #f8fafc; }
-.server-card.warning { background: #fffaf0; border-color: #fde68a; border-left-color: var(--health-color); }
-.server-card.critical { background: #fff7f7; border-color: #fecaca; border-left-color: var(--health-color); }
-.server-card.offline {
-  opacity: 0.72;
-  background: #f1f5f9;
-  border-color: #e2e8f0;
-  border-left-color: var(--health-color);
-}
+.mc-card:hover { box-shadow: var(--card-shadow-hover); transform: translateY(-2px); }
+.mc-card.normal { border-left-color: #0891b2; }
+.mc-card.warning { border-left-color: #f59e0b; }
+.mc-card.critical { border-left-color: #ef4444; }
+.mc-card.offline { border-left-color: var(--text-muted); opacity: 0.65; }
 
-.sc-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.sc-name {
-  font-weight: 600;
-  font-size: 14px;
-  color: #1e293b;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 60%;
-}
-.sc-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: #64748b;
-}
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  display: inline-block;
-}
-.status-dot.online { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); animation: pulse 2s infinite; }
-.status-dot.offline { background: #ef4444; }
-.sc-status.unknown .status-dot,
-.status-dot.unknown { background: #94a3b8; }
-.sc-status.online { color: #16a34a; }
-.sc-status.offline { color: #ef4444; }
-.sc-status.unknown { color: #94a3b8; }
-.sc-status.unknown .status-dot { background: #94a3b8; }
+.mc-head { padding: 14px 16px; border-bottom: 1px solid var(--border-color); }
+.mc-title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.mc-title-row strong { font-size: 14px; font-weight: 650; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-tag { flex-shrink: 0; padding: 2px 8px; background: var(--primary-bg); color: var(--primary-color); border-radius: 999px; font-size: 10px; font-weight: 700; }
+.mc-status { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; background: var(--surface-subtle); color: var(--text-muted); }
+.mc-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+.mc-status.online { background: #dcfce7; color: #16a34a; }
+.mc-status.online i { background: #16a34a; }
+.mc-status.offline { background: var(--color-danger-soft); color: var(--color-danger); }
+.mc-status.offline i { background: var(--color-danger); }
+.mc-host { color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
-}
+.mc-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border-color); border-bottom: 1px solid var(--border-color); }
+.mc-metric { display: flex; flex-direction: column; gap: 5px; padding: 12px; background: var(--surface); }
+.mc-metric span { color: var(--text-muted); font-size: 10px; font-weight: 600; text-transform: uppercase; }
+.mc-metric strong { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+.mc-metric strong.high { color: #ef4444; }
+.mc-metric strong.warn { color: #f59e0b; }
+.mc-metric small { color: var(--text-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-bar { height: 3px; background: var(--border-color); border-radius: 99px; overflow: hidden; }
+.mc-bar > div { height: 100%; border-radius: inherit; transition: width 0.3s ease; }
 
-.sc-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
-  min-height: 18px;
-}
-.sc-os {
-  font-size: 12px;
-  color: #94a3b8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sc-tag {
-  flex-shrink: 0;
-  font-size: 11px;
-  color: #4f6ef7;
-  background: #eef2ff;
-  padding: 1px 8px;
-  border-radius: 10px;
-}
-
-.sc-bar-row { margin-bottom: 8px; }
-.sc-bar-label {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #64748b;
-  margin-bottom: 4px;
-}
-.sc-bar-label em {
-  font-style: normal;
-  color: #94a3b8;
-  margin-left: 4px;
-}
-.sc-bar {
-  height: 6px;
-  background: #e8ecf4;
-  border-radius: 4px;
-  overflow: hidden;
-}
-.sc-bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.5s ease, background 0.3s ease;
-}
-
-.sc-footer {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed #e8ecf4;
-  font-size: 11px;
-  color: #94a3b8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sc-network {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 6px;
-  font-size: 11px;
-  color: #06b6d4;
-}
+.mc-details { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 12px; padding: 12px 16px; }
+.mc-details > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mc-details span { color: var(--text-muted); font-size: 10px; font-weight: 600; }
+.mc-details strong { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 1200px) {
   .dashboard-live { grid-template-columns: 1fr; }

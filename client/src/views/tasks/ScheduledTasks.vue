@@ -182,6 +182,6 @@ async function del(row) { await ElMessageBox.confirm('确定删除？', '确认'
   background: #f4f6fb;
   padding: 2px 6px;
   border-radius: 4px;
-  color: #4f6ef7;
+  color: #0891b2;
 }
 </style>

@@ -67,85 +67,73 @@
       </div>
 
       <div v-else class="server-grid">
-        <div
+        <article
           v-for="server in filteredServers"
           :key="server.id"
-          class="server-card"
+          class="mc-card"
           :class="cardHealth(server).className"
-          :style="{ '--health-color': cardHealth(server).color }"
         >
-          <div class="server-head">
-            <div class="server-title">
+          <header class="mc-head">
+            <div class="mc-title-row">
               <strong :title="server.name">{{ server.name }}</strong>
-              <span v-if="server.group_name">{{ server.group_name }}</span>
+              <span v-if="server.group_name" class="mc-tag">{{ server.group_name }}</span>
+              <span class="mc-status" :class="server.status"><i></i>{{ statusText(server.status) }}</span>
             </div>
-            <div class="server-status" :class="server.status">
-              <i></i>{{ statusText(server.status) }}
+            <div class="mc-host">{{ server.host }}<span v-if="server.os_info"> · {{ server.os_info }}</span></div>
+          </header>
+
+          <div class="mc-metrics">
+            <div class="mc-metric">
+              <span>CPU</span>
+              <strong :class="pct(server.cpu_usage) >= 90 ? 'high' : pct(server.cpu_usage) >= 70 ? 'warn' : ''">{{ pct(server.cpu_usage) }}%</strong>
+              <div class="mc-bar"><div :style="{ width: pct(server.cpu_usage) + '%', background: usageColor(server.cpu_usage) }"></div></div>
+              <small>{{ server._sys?.cpu_cores || '?' }} 核</small>
             </div>
-          </div>
-
-          <div class="server-meta">
-            <span :title="server.host">{{ server.host || '-' }}</span>
-            <span :title="server.os_info">{{ server.os_info || '-' }}</span>
-          </div>
-
-          <div class="metric-row">
-            <div class="metric-label"><span>CPU</span><strong>{{ pct(server.cpu_usage) }}%</strong></div>
-            <div class="metric-bar"><div :style="{ width: pct(server.cpu_usage) + '%', background: usageColor(server.cpu_usage) }"></div></div>
-          </div>
-          <div class="metric-row">
-            <div class="metric-label">
+            <div class="mc-metric">
               <span>内存</span>
-              <strong>{{ pct(server.memory_usage) }}% <em>{{ mb(server.mem_used_mb) }} / {{ mb(server.mem_total_mb) }}</em></strong>
+              <strong :class="pct(server.memory_usage) >= 90 ? 'high' : pct(server.memory_usage) >= 70 ? 'warn' : ''">{{ pct(server.memory_usage) }}%</strong>
+              <div class="mc-bar"><div :style="{ width: pct(server.memory_usage) + '%', background: usageColor(server.memory_usage) }"></div></div>
+              <small>{{ mb(server.mem_used_mb) }} / {{ mb(server.mem_total_mb) }}</small>
             </div>
-            <div class="metric-bar"><div :style="{ width: pct(server.memory_usage) + '%', background: usageColor(server.memory_usage) }"></div></div>
-          </div>
-          <div class="metric-row">
-            <div class="metric-label">
+            <div class="mc-metric">
               <span>磁盘</span>
-              <strong>{{ pct(server.disk_usage) }}% <em>{{ mb(server.disk_used_mb) }} / {{ mb(server.disk_total_mb) }}</em></strong>
+              <strong :class="pct(server.disk_usage) >= 90 ? 'high' : pct(server.disk_usage) >= 70 ? 'warn' : ''">{{ pct(server.disk_usage) }}%</strong>
+              <div class="mc-bar"><div :style="{ width: pct(server.disk_usage) + '%', background: usageColor(server.disk_usage) }"></div></div>
+              <small>{{ mb(server.disk_used_mb) }} / {{ mb(server.disk_total_mb) }}</small>
             </div>
-            <div class="metric-bar"><div :style="{ width: pct(server.disk_usage) + '%', background: usageColor(server.disk_usage) }"></div></div>
           </div>
 
-          <div class="server-foot">
-            <span>负载 {{ server.load_avg || '-' }}</span>
-            <span :title="server.uptime || ''">{{ server.uptime || '-' }}</span>
+          <div class="mc-details">
+            <div><span>负载</span><strong>{{ server.load_avg || '-' }}</strong></div>
+            <div><span>运行</span><strong :title="server.uptime || ''">{{ server.uptime || '-' }}</strong></div>
+            <div><span>下行</span><strong>{{ bytes(server.network_rx_bytes) }}</strong></div>
+            <div><span>上行</span><strong>{{ bytes(server.network_tx_bytes) }}</strong></div>
+            <div><span>TCP</span><strong>{{ server.tcp_connections ?? '-' }}</strong></div>
+            <div><span>UDP</span><strong>{{ server.udp_connections ?? '-' }}</strong></div>
           </div>
 
-          <!-- 系统信息 -->
-          <div class="info-grid" v-if="server._sys && Object.keys(server._sys).length">
-            <div class="info-cell"><span>内核</span><strong :title="server._sys.kernel">{{ server._sys.kernel || '-' }}</strong></div>
-            <div class="info-cell"><span>架构</span><strong>{{ server._sys.arch || '-' }}</strong></div>
-            <div class="info-cell"><span>CPU</span><strong>{{ server._sys.cpu_cores || '?' }}核</strong></div>
-            <div class="info-cell"><span>拥塞</span><strong>{{ server._sys.tcp_congestion || '-' }}</strong></div>
-            <div class="info-cell full" v-if="server._sys.cpu_model"><span>型号</span><strong :title="server._sys.cpu_model">{{ server._sys.cpu_model }}</strong></div>
+          <div class="mc-sysinfo" v-if="server._sys && Object.keys(server._sys).length">
+            <div><span>内核</span><strong :title="server._sys.kernel">{{ server._sys.kernel || '-' }}</strong></div>
+            <div><span>架构</span><strong>{{ server._sys.arch || '-' }}</strong></div>
+            <div><span>拥塞</span><strong>{{ server._sys.tcp_congestion || '-' }}</strong></div>
+            <div v-if="server._sys.cpu_model" class="mc-wide"><span>型号</span><strong :title="server._sys.cpu_model">{{ server._sys.cpu_model }}</strong></div>
           </div>
 
-          <div class="network-row">
-            <span>下行 {{ bytes(server.network_rx_bytes) }}</span>
-            <span>上行 {{ bytes(server.network_tx_bytes) }}</span>
-          </div>
-          <div class="network-row">
-            <span>TCP {{ server.tcp_connections ?? '-' }}</span>
-            <span>UDP {{ server.udp_connections ?? '-' }}</span>
-          </div>
-
-          <!-- 公网信息（内部页才显示） -->
-          <div class="info-grid public-grid" v-if="hasPublicInfo(server._sys)">
-            <div class="info-cell" v-if="server._sys.public_ipv4"><span>IPv4</span><strong>{{ server._sys.public_ipv4 }}</strong></div>
-            <div class="info-cell" v-if="server._sys.public_ipv6"><span>IPv6</span><strong :title="server._sys.public_ipv6">{{ server._sys.public_ipv6 }}</strong></div>
-            <div class="info-cell" v-if="server._sys.geo_location"><span>位置</span><strong>{{ server._sys.geo_location }}</strong></div>
-            <div class="info-cell" v-if="server._sys.isp"><span>运营商</span><strong>{{ server._sys.isp }}</strong></div>
-            <div class="info-cell full" v-if="server._sys.dns_servers"><span>DNS</span><strong :title="server._sys.dns_servers">{{ server._sys.dns_servers }}</strong></div>
+          <div class="mc-public" v-if="hasPublicInfo(server._sys)">
+            <div v-if="server._sys.public_ipv4"><span>IPv4</span><strong>{{ server._sys.public_ipv4 }}</strong></div>
+            <div v-if="server._sys.public_ipv6"><span>IPv6</span><strong :title="server._sys.public_ipv6">{{ server._sys.public_ipv6 }}</strong></div>
+            <div v-if="server._sys.geo_location"><span>位置</span><strong>{{ server._sys.geo_location }}</strong></div>
+            <div v-if="server._sys.isp"><span>运营商</span><strong>{{ server._sys.isp }}</strong></div>
+            <div v-if="server._sys.dns_servers" class="mc-wide"><span>DNS</span><strong :title="server._sys.dns_servers">{{ server._sys.dns_servers }}</strong></div>
           </div>
 
-          <div class="fresh-row">最后连接 {{ formatTime(server.last_connected_at) }}</div>
-          <div class="expiry-row" v-if="server._expiry" :class="server._expiry.className">
-            <span>到期 {{ server._expiry.date }}</span>
-            <strong>{{ server._expiry.text }}</strong>
-          </div>
-        </div>
+          <footer class="mc-footer">
+            <span>最后连接 {{ formatTime(server.last_connected_at) }}</span>
+            <div class="mc-expiry" v-if="server._expiry" :class="server._expiry.className">
+              到期 {{ server._expiry.date }} · {{ server._expiry.text }}
+            </div>
+          </footer>
+        </article>
       </div>
     </el-card>
   </div>
@@ -305,367 +293,181 @@ function expiryDisplay(expiresAt) {
 </script>
 
 <style scoped>
-.monitor-page {
-  min-height: calc(100vh - 56px);
-}
-
-.monitor-card {
-  border-radius: 10px;
-  border: 1px solid #e5eaf3;
-  overflow: hidden;
-}
-
-.monitor-card :deep(.el-card__body) {
-  padding: 20px;
-}
+.monitor-page { min-height: calc(100vh - 56px); }
+.monitor-card { border-radius: var(--radius-lg); overflow: hidden; }
+.monitor-card :deep(.el-card__body) { padding: 20px; }
 
 .monitor-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; margin-bottom: 16px;
 }
-
-.page-title {
-  color: #111827;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.page-desc {
-  margin-top: 6px;
-  color: #64748b;
-  font-size: 13px;
-}
-
+.page-title { color: var(--text-primary); font-size: 18px; font-weight: 700; }
+.page-desc { margin-top: 6px; color: var(--text-muted); font-size: 13px; }
 .monitor-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #64748b;
-  font-size: 13px;
-  white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 7px;
+  color: var(--text-muted); font-size: 13px; white-space: nowrap;
 }
-
-.monitor-state em {
-  color: #94a3b8;
-  font-style: normal;
-}
-
-.state-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #94a3b8;
-}
-
-.state-dot.online {
-  background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.45);
-}
+.monitor-state em { color: var(--text-muted); font-style: normal; margin-left: 4px; }
+.state-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+.state-dot.online { background: #16a34a; box-shadow: 0 0 8px rgba(22,163,74,0.45); }
 
 .summary-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
+  display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 12px; margin-bottom: 14px;
 }
-
 .summary-item {
-  padding: 12px 14px;
-  border: 1px solid #e6edf5;
-  border-radius: 8px;
-  background: #f8fafc;
+  padding: 12px 14px; border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm); background: var(--surface-subtle);
 }
-
-.summary-item span {
-  display: block;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.summary-item strong {
-  display: block;
-  margin-top: 4px;
-  color: #111827;
-  font-size: 24px;
-  line-height: 1;
-}
-
+.summary-item span { display: block; color: var(--text-muted); font-size: 12px; }
+.summary-item strong { display: block; margin-top: 4px; color: var(--text-primary); font-size: 24px; line-height: 1; }
 .summary-item.success strong { color: #16a34a; }
-.summary-item.muted strong { color: #64748b; }
-.summary-item.danger strong { color: #dc2626; }
+.summary-item.muted strong { color: var(--text-muted); }
+.summary-item.danger strong { color: #ef4444; }
 
 .filter-bar {
-  display: grid;
-  grid-template-columns: minmax(140px, 180px) minmax(220px, 1fr) minmax(130px, 160px) minmax(140px, 170px);
-  gap: 10px;
-  padding: 12px;
-  margin-bottom: 14px;
-  border: 1px solid #e6edf5;
-  border-radius: 8px;
-  background: #f8fafc;
+  display: grid; gap: 10px; padding: 12px; margin-bottom: 14px;
+  grid-template-columns: minmax(140px,180px) minmax(220px,1fr) minmax(130px,160px) minmax(140px,170px);
+  border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--surface-subtle);
 }
+.filter-bar :deep(.el-select), .filter-bar :deep(.el-input) { width: 100%; }
 
-.filter-bar :deep(.el-select),
-.filter-bar :deep(.el-input) {
-  width: 100%;
-}
-
-.monitor-alert {
-  margin-bottom: 14px;
-}
-
+.monitor-alert { margin-bottom: 14px; }
 .empty-state {
-  padding: 64px 0;
-  color: #94a3b8;
-  text-align: center;
-  border: 1px dashed #dbe5ef;
-  border-radius: 8px;
-  background: #f8fafc;
+  padding: 64px 0; color: var(--text-muted); text-align: center;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-subtle);
 }
 
+/* ═══ KPanel 风格卡片 ═══ */
 .server-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 16px;
 }
 
-.server-card {
-  padding: 14px;
-  border: 1px solid #e6edf5;
-  border-left: 4px solid var(--health-color);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
-}
-
-.server-card.warning {
-  background: #fffaf0;
-  border-color: #fde68a;
-}
-
-.server-card.critical {
-  background: #fff7f7;
-  border-color: #fecaca;
-}
-
-.server-card.offline {
-  opacity: 0.72;
-  background: #f1f5f9;
-  border-color: #e2e8f0;
-}
-
-.server-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.server-title {
-  min-width: 0;
-}
-
-.server-title strong {
-  display: block;
-  overflow: hidden;
-  color: #111827;
-  font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.server-title span {
-  display: inline-block;
-  margin-top: 4px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  color: #4f6ef7;
-  background: #eef4ff;
-  font-size: 12px;
-}
-
-.server-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #64748b;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.server-status i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #94a3b8;
-}
-
-.server-status.online { color: #16a34a; }
-.server-status.online i { background: #22c55e; }
-.server-status.offline { color: #ef4444; }
-.server-status.offline i { background: #ef4444; }
-
-.server-meta {
+.mc-card {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin: 10px 0 12px;
-  color: #94a3b8;
-  font-size: 12px;
-}
-
-.server-meta span {
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid #0891b2;
+  border-radius: var(--radius-md);
+  box-shadow: var(--card-shadow);
+  transition: box-shadow var(--transition-normal), transform var(--transition-normal);
+}
+.mc-card:hover { box-shadow: var(--card-shadow-hover); transform: translateY(-2px); }
+.mc-card.warning { border-left-color: #f59e0b; }
+.mc-card.critical { border-left-color: #ef4444; }
+.mc-card.offline { border-left-color: var(--text-muted); opacity: 0.65; }
+
+/* 头部 */
+.mc-head {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+.mc-title-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+}
+.mc-title-row strong {
+  font-size: 15px; font-weight: 650; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mc-tag {
+  flex-shrink: 0; padding: 2px 8px;
+  background: var(--primary-bg); color: var(--primary-color);
+  border-radius: 999px; font-size: 10px; font-weight: 700;
+}
+.mc-status {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700;
+  background: var(--surface-subtle); color: var(--text-muted);
+}
+.mc-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+.mc-status.online { background: #dcfce7; color: #16a34a; }
+.mc-status.online i { background: #16a34a; }
+.mc-status.offline { background: var(--color-danger-soft); color: var(--color-danger); }
+.mc-status.offline i { background: var(--color-danger); }
+.mc-host {
+  color: var(--text-muted); font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.metric-row {
-  margin-bottom: 9px;
+/* 指标三列 */
+.mc-metrics {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+  background: var(--border-color); border-bottom: 1px solid var(--border-color);
+}
+.mc-metric {
+  display: flex; flex-direction: column; gap: 5px; padding: 12px;
+  background: var(--surface);
+}
+.mc-metric span {
+  color: var(--text-muted); font-size: 10px; font-weight: 600; text-transform: uppercase;
+}
+.mc-metric strong { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+.mc-metric strong.high { color: #ef4444; }
+.mc-metric strong.warn { color: #f59e0b; }
+.mc-metric small { color: var(--text-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-bar {
+  height: 3px; background: var(--border-color); border-radius: 99px; overflow: hidden;
+}
+.mc-bar > div { height: 100%; border-radius: inherit; transition: width 0.3s ease; }
+
+/* 详情网格 */
+.mc-details {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 12px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border-color);
+}
+.mc-details > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mc-details span { color: var(--text-muted); font-size: 10px; font-weight: 600; }
+.mc-details strong {
+  font-size: 12px; color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.metric-label {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
-  color: #64748b;
-  font-size: 12px;
+/* 系统信息 */
+.mc-sysinfo {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border-color);
+}
+.mc-sysinfo > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mc-sysinfo span { color: var(--text-muted); font-size: 10px; font-weight: 600; }
+.mc-sysinfo strong {
+  font-size: 12px; color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.metric-label strong {
-  color: #334155;
-  font-weight: 600;
+/* 公网信息 */
+.mc-public {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border-color);
+}
+.mc-public > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mc-public span { color: var(--text-muted); font-size: 10px; font-weight: 600; }
+.mc-public strong {
+  font-size: 12px; color: var(--primary-color);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.metric-label em {
-  margin-left: 4px;
-  color: #94a3b8;
-  font-style: normal;
-  font-weight: 400;
-}
+.mc-wide { grid-column: 1 / -1; }
 
-.metric-bar {
-  height: 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e8ecf4;
+/* 底部 */
+.mc-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 10px 16px; margin-top: auto;
 }
-
-.metric-bar div {
-  height: 100%;
-  border-radius: inherit;
-  transition: width 0.4s ease;
+.mc-footer > span { color: var(--text-muted); font-size: 11px; }
+.mc-expiry {
+  padding: 3px 8px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 600;
+  background: var(--surface-subtle); color: var(--text-muted);
 }
-
-.server-foot,
-.network-row,
-.fresh-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  color: #94a3b8;
-  font-size: 11px;
-}
-
-.server-foot {
-  padding-top: 8px;
-  margin-top: 8px;
-  border-top: 1px dashed #e6edf5;
-}
-
-.network-row {
-  margin-top: 6px;
-  color: #0891b2;
-}
-
-.fresh-row {
-  margin-top: 6px;
-  display: block;
-}
-
-.info-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px 10px;
-  padding: 8px 0 4px;
-  margin-top: 4px;
-  border-top: 1px dashed #e6edf5;
-}
-
-.info-cell {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  min-width: 0;
-  font-size: 11px;
-}
-
-.info-cell span {
-  flex-shrink: 0;
-  color: #94a3b8;
-}
-
-.info-cell strong {
-  min-width: 0;
-  overflow: hidden;
-  color: #334155;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.info-cell.full {
-  grid-column: 1 / -1;
-}
-
-.public-grid .info-cell strong {
-  color: #4f6ef7;
-}
-
-.expiry-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 6px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  background: #f1f5f9;
-  color: #64748b;
-}
-
-.expiry-row strong {
-  font-weight: 600;
-}
-
-.expiry-row.expiring {
-  background: #fffbeb;
-  color: #b45309;
-}
-
-.expiry-row.expired {
-  background: #fef2f2;
-  color: #dc2626;
-}
+.mc-expiry.expiring { background: #fff3dc; color: #c47a16; }
+.mc-expiry.expired { background: var(--color-danger-soft); color: var(--color-danger); }
 
 @media (max-width: 900px) {
-  .monitor-header {
-    flex-direction: column;
-  }
-
-  .summary-row,
-  .filter-bar {
-    grid-template-columns: 1fr;
-  }
-
-  .server-grid {
-    grid-template-columns: 1fr;
-  }
+  .monitor-header { flex-direction: column; }
+  .summary-row, .filter-bar { grid-template-columns: 1fr; }
+  .server-grid { grid-template-columns: 1fr; }
 }
 </style>

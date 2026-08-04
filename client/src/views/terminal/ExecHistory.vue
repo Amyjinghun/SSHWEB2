@@ -75,7 +75,7 @@ async function viewDetail(row) { const r = await api.get(`/api/commands/logs/${r
   background: #f4f6fb;
   padding: 2px 6px;
   border-radius: 4px;
-  color: #4f6ef7;
+  color: #0891b2;
 }
 .detail-grid {
   display: grid;

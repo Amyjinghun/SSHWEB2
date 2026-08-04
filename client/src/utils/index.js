@@ -1,7 +1,7 @@
 // 工具函数 - 获取服务器列表（全局使用）
 export function getStatusColor(status) {
-  const map = { online: '#67C23A', offline: '#F56C6C', unknown: '#909399' }
-  return map[status] || '#909399'
+  const map = { online: '#0891b2', offline: '#cc4545', unknown: '#718080' }
+  return map[status] || '#718080'
 }
 
 export function getStatusText(status) {

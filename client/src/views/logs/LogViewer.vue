@@ -87,7 +87,7 @@ function startTail() {
   stopTail()
 
   terminal = new Terminal({
-    theme: { background: '#0f172a', foreground: '#e2e8f0', cursor: '#4f6ef7', selectionBackground: 'rgba(79,110,247,0.3)' },
+    theme: { background: '#0f172a', foreground: '#e2e8f0', cursor: '#0891b2', selectionBackground: 'rgba(8,145,178,0.3)' },
     fontSize: 13,
     fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
     cursorBlink: false,

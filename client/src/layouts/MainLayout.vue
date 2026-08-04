@@ -5,8 +5,8 @@
         <svg viewBox="0 0 32 32" width="30" height="30" class="logo-icon">
           <defs>
             <linearGradient id="sidebarLogo" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#4f6ef7"/>
-              <stop offset="100%" stop-color="#7b93fa"/>
+              <stop offset="0%" stop-color="#0891b2"/>
+              <stop offset="100%" stop-color="#06b6d4"/>
             </linearGradient>
           </defs>
           <rect width="32" height="32" rx="8" fill="url(#sidebarLogo)"/>
@@ -51,6 +51,8 @@
           <el-menu-item index="/file-distribute">文件分发</el-menu-item>
           <el-menu-item index="/services">服务管理</el-menu-item>
           <el-menu-item index="/processes">进程管理</el-menu-item>
+          <el-menu-item index="/docker">Docker管理</el-menu-item>
+          <el-menu-item index="/system-manage">系统维护</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="monitor">
@@ -99,9 +101,10 @@
           </el-breadcrumb>
         </div>
         <div class="header-right">
+          <el-icon class="theme-btn" @click="toggleTheme" :size="18"><Sunny v-if="isDark" /><Moon v-else /></el-icon>
           <el-dropdown @command="handleCommand">
             <span class="user-info">
-              <el-avatar :size="32" style="background:linear-gradient(135deg,#4f6ef7,#7b93fa);font-weight:600">{{ userStore.userInfo?.username?.[0] || 'A' }}</el-avatar>
+              <el-avatar :size="32" style="background:linear-gradient(135deg,#0891b2,#06b6d4);font-weight:600">{{ userStore.userInfo?.username?.[0] || 'A' }}</el-avatar>
               <span class="user-name">{{ userStore.userInfo?.username || '管理员' }}</span>
               <el-icon class="arrow-icon"><ArrowDown /></el-icon>
             </span>
@@ -148,10 +151,20 @@ import { ElMessage } from 'element-plus'
 const router = useRouter()
 const userStore = useUserStore()
 const isCollapse = ref(false)
+const isDark = ref(localStorage.getItem('theme') === 'dark')
 const showPasswordDialog = ref(false)
 const passwordForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
 
-onMounted(() => { userStore.getUserInfo() })
+onMounted(() => {
+  userStore.getUserInfo()
+  document.documentElement.classList.toggle('dark', isDark.value)
+})
+
+function toggleTheme() {
+  isDark.value = !isDark.value
+  document.documentElement.classList.toggle('dark', isDark.value)
+  localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
+}
 
 function handleCommand(cmd) {
   if (cmd === 'logout') {
@@ -178,11 +191,11 @@ async function changePassword() {
 <style scoped lang="scss">
 .main-layout { height: 100vh; }
 .sidebar {
-  background: #0f172a;
+  background: var(--sidebar-bg);
   overflow-y: auto;
   overflow-x: hidden;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  border-right: 1px solid rgba(255,255,255,0.05);
+  border-right: 1px solid var(--sidebar-border);
 }
 .logo {
   height: 60px;
@@ -190,16 +203,16 @@ async function changePassword() {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid var(--sidebar-border);
   cursor: pointer;
   transition: background 0.2s;
-  &:hover { background: rgba(79, 110, 247, 0.08); }
+  &:hover { background: rgba(6, 182, 212, 0.08); }
   .logo-icon { flex-shrink: 0; }
   .logo-text {
     color: #fff;
     font-size: 18px;
     font-weight: 700;
-    letter-spacing: 2px;
+    letter-spacing: 1.5px;
     white-space: nowrap;
   }
 }
@@ -211,42 +224,54 @@ async function changePassword() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   padding: 0 24px;
   height: 56px;
-  border-bottom: 1px solid #f0f2f7;
+  border-bottom: 1px solid var(--border-color);
+  z-index: 10;
+  position: sticky;
+  top: 0;
   .header-left { display: flex; align-items: center; gap: 16px; }
   .collapse-btn {
     font-size: 20px;
     cursor: pointer;
-    color: #64748b;
+    color: var(--text-muted);
     padding: 4px;
-    border-radius: 6px;
-    transition: all 0.15s;
-    &:hover { color: #4f6ef7; background: rgba(79, 110, 247, 0.08); }
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    &:hover { color: var(--primary-color); background: var(--primary-bg); }
   }
-  .header-right { display: flex; align-items: center; }
+  .header-right { display: flex; align-items: center; gap: 8px; }
+  .theme-btn {
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 8px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    &:hover { color: var(--primary-color); background: var(--primary-bg); }
+  }
   .user-info {
     display: flex;
     align-items: center;
     cursor: pointer;
     padding: 4px 8px;
-    border-radius: 8px;
-    transition: background 0.15s;
-    &:hover { background: #f4f6fb; }
+    border-radius: var(--radius-sm);
+    transition: background var(--transition-fast);
+    &:hover { background: var(--surface-subtle); }
   }
   .user-name {
     margin-left: 10px;
     font-weight: 500;
-    color: #1e293b;
+    color: var(--text-primary);
     font-size: 14px;
   }
-  .arrow-icon { margin-left: 4px; color: #94a3b8; font-size: 12px; }
+  .arrow-icon { margin-left: 4px; color: var(--text-muted); font-size: 12px; }
 }
 
 .main-content {
-  background: #f4f6fb;
+  background: var(--bg-color);
   overflow-y: auto;
 }
 

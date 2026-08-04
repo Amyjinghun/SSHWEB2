@@ -298,7 +298,7 @@ function showDetail(row) {
   justify-content: center;
   flex: 0 0 auto;
   background: #eef4ff;
-  color: #4f6ef7;
+  color: #0891b2;
   font-size: 12px;
   font-weight: 700;
 }
@@ -323,7 +323,7 @@ function showDetail(row) {
 }
 
 .detail-button:hover {
-  color: #4f6ef7;
+  color: #0891b2;
   border-color: #b8c6ff;
   background: #f5f7ff;
 }

@@ -520,7 +520,7 @@ onMounted(loadSettings)
     padding: 2px 8px;
     border-radius: 999px;
     background: #eef4ff;
-    color: #4f6ef7;
+    color: #0891b2;
     font-size: 12px;
     font-weight: 600;
   }
@@ -553,14 +553,14 @@ onMounted(loadSettings)
   }
 
   :deep(.preview-toggle) {
-    border: 1px solid #4f6ef7;
+    border: 1px solid #0891b2;
     color: #fff;
-    background: #4f6ef7;
+    background: #0891b2;
 
     &:hover {
       border-color: #3f5fe8;
       background: #3f5fe8;
-      box-shadow: 0 6px 14px rgba(79, 110, 247, 0.22);
+      box-shadow: 0 6px 14px rgba(8, 145, 178, 0.22);
     }
   }
 
@@ -570,7 +570,7 @@ onMounted(loadSettings)
     background: #fff;
 
     &:hover {
-      color: #4f6ef7;
+      color: #0891b2;
       border-color: #b7c5ff;
       background: #f5f7ff;
     }
@@ -604,8 +604,8 @@ onMounted(loadSettings)
     transition: all .2s ease;
 
     &:focus {
-      border-color: #4f6ef7;
-      box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.12);
+      border-color: #0891b2;
+      box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.12);
     }
 
     &::placeholder {

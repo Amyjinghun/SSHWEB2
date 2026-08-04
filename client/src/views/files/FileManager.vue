@@ -23,8 +23,13 @@
       </div>
 
       <div class="quick-paths">
-        <span class="quick-label">快捷路径：</span>
-        <span v-for="p in quickPaths" :key="p" class="quick-link" @click="jumpTo(p)">{{ p }}</span>
+        <span class="quick-label">快捷目录</span>
+        <div class="quick-buttons">
+          <button v-for="p in quickPaths" :key="p" class="quick-btn" :class="{ active: currentPath === p }" @click="jumpTo(p)">
+            <el-icon v-if="p === '/'"><HomeFilled /></el-icon>
+            {{ p === '/' ? '根目录' : p }}
+          </button>
+        </div>
       </div>
 
       <el-alert
@@ -375,16 +380,24 @@ async function createNew() {
 .toolbar-actions { display: flex; gap: 8px; }
 .path-box { display: flex; gap: 10px; margin-bottom: 10px; }
 .path-input { flex: 1; min-width: 360px; }
-.quick-paths { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; color: #64748b; }
-.quick-label { font-size: 13px; margin-right: 2px; }
-.quick-link { font-size: 13px; color: #64748b; cursor: pointer; transition: color 0.15s; }
-.quick-link:hover { color: #4f6ef7; }
+.quick-paths { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.quick-label { font-size: 12px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+.quick-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+.quick-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 12px; border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--text-secondary); font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s;
+}
+.quick-btn:hover { color: var(--primary-color); border-color: var(--primary-color); background: var(--primary-bg); }
+.quick-btn.active { color: #fff; background: var(--primary-color); border-color: var(--primary-color); }
 .edit-path { margin-bottom: 8px; color: #64748b; word-break: break-all; font-size: 13px; }
 .code-editor :deep(textarea) { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; }
 .hint { margin-top: 10px; color: #94a3b8; font-size: 13px; word-break: break-all; }
 .file-link { cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: color 0.15s; }
-.file-link:hover { color: #4f6ef7; }
+.file-link:hover { color: #0891b2; }
 .icon-folder { color: #f59e0b; }
-.icon-file { color: #4f6ef7; }
+.icon-file { color: #0891b2; }
 @media (max-width: 768px) { .path-box { flex-direction: column; } .path-input { min-width: auto; } }
 </style>

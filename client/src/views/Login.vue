@@ -10,8 +10,8 @@
             <svg viewBox="0 0 56 56" width="56" height="56">
               <defs>
                 <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stop-color="#4f6ef7"/>
-                  <stop offset="100%" stop-color="#7b93fa"/>
+                  <stop offset="0%" stop-color="#0891b2"/>
+                  <stop offset="100%" stop-color="#06b6d4"/>
                 </linearGradient>
               </defs>
               <rect width="56" height="56" rx="14" fill="url(#logoGrad)"/>
@@ -70,7 +70,7 @@ async function handleLogin() {
 .login-page { height: 100vh; }
 .login-bg {
   height: 100%;
-  background: #0f172a;
+  background: #0a1929;
   display: flex; align-items: center; justify-content: center;
   position: relative;
   overflow: hidden;
@@ -79,8 +79,8 @@ async function handleLogin() {
 .bg-grid {
   position: absolute; inset: 0;
   background-image:
-    linear-gradient(rgba(79, 110, 247, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(79, 110, 247, 0.03) 1px, transparent 1px);
+    linear-gradient(rgba(6, 182, 212, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(6, 182, 212, 0.04) 1px, transparent 1px);
   background-size: 60px 60px;
 }
 
@@ -93,12 +93,12 @@ async function handleLogin() {
 }
 .bg-glow-1 {
   width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(79, 110, 247, 0.4), transparent 70%);
+  background: radial-gradient(circle, rgba(8, 145, 178, 0.4), transparent 70%);
   top: -10%; left: -5%;
 }
 .bg-glow-2 {
   width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.3), transparent 70%);
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.25), transparent 70%);
   bottom: -10%; right: -5%;
   animation-delay: 4s;
 }
@@ -132,10 +132,10 @@ async function handleLogin() {
     margin: 16px 0 8px;
     font-size: 24px;
     font-weight: 700;
-    color: #0f172a;
+    color: #172323;
     letter-spacing: 1px;
   }
-  p { color: #64748b; font-size: 14px; margin: 0; }
+  p { color: #718080; font-size: 14px; margin: 0; }
 }
 
 .login-btn {

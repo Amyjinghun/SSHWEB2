@@ -38,6 +38,7 @@
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="save" :loading="saving">保存</el-button>
+          <el-button v-if="!isEdit" type="success" plain @click="saveAndTest" :loading="testing">保存并测试连接</el-button>
           <el-button v-if="isEdit" type="success" plain @click="testCurrent" :loading="testing">测试连接</el-button>
           <el-button @click="$router.back()">返回</el-button>
         </el-form-item>
@@ -107,6 +108,38 @@ function validateForm() {
   if (authType !== 'private_key' && !form.value.password && !form.value.has_password) return ElMessage.warning('请填写SSH密码')
   if (authType !== 'password' && !form.value.private_key && !form.value.has_private_key) return ElMessage.warning('请填写SSH私钥')
   return true
+}
+
+async function saveAndTest() {
+  if (validateForm() !== true) return
+  saving.value = true
+  const payload = buildPayload()
+  const res = await api.post('/api/servers', payload)
+  saving.value = false
+  if (res.code !== 0) return ElMessage.error(res.message)
+  const newId = res.data.id
+  testing.value = true
+  const testRes = await api.post(`/api/servers/${newId}/test`)
+  testing.value = false
+  if (testRes.code === 0) {
+    ElMessage.success('保存成功，SSH 连接正常')
+    router.push('/servers')
+  } else {
+    const d = testRes.data?.diagnostics
+    const lines = [
+      '服务器已保存，但 SSH 连接失败：',
+      testRes.message,
+      d?.target ? `目标：${d.target}` : '',
+      d?.tcp ? `TCP：${d.tcp.ok ? '成功' : '失败'} - ${d.tcp.message}` : '',
+      d?.ssh ? `SSH：${d.ssh.ok ? '成功' : '失败'} - ${d.ssh.message}` : ''
+    ].filter(Boolean)
+    if (d?.steps?.length) {
+      lines.push('—— 连接步骤 ——')
+      d.steps.forEach(s => lines.push(`· ${s.step}${s.detail ? '：' + s.detail : ''}`))
+    }
+    ElMessageBox.alert(lines.join('\n'), '连接测试失败', { type: 'warning', confirmButtonText: '去修改' })
+    router.push('/servers/edit/' + newId)
+  }
 }
 
 async function testCurrent() {
