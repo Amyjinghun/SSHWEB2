@@ -4,7 +4,7 @@
     <aside class="term-sidebar">
       <div class="sidebar-top">
         <el-select v-model="currentServerId" placeholder="选择服务器" filterable size="small" style="width:100%">
-          <el-option v-for="s in servers" :key="s.id" :label="s.name" :value="s.id" />
+          <el-option v-for="s in servers" :key="s.id" :label="`${s.name} (${s.host})`" :value="s.id" />
         </el-select>
         <el-button type="primary" size="small" :icon="Plus" @click="addTerminal" :disabled="!currentServerId" style="margin-top:8px;width:100%">连接</el-button>
       </div>
@@ -16,7 +16,8 @@
           <span class="session-dot" :class="t.error ? 'error' : 'connected'"></span>
           <div class="session-info">
             <strong :title="t.name">{{ t.name }}</strong>
-            <small>{{ t.error ? '连接失败' : '已连接' }}</small>
+            <small v-if="t.error" style="color:var(--color-danger)">连接失败</small>
+            <small v-else class="session-ip" @click.stop="copyIp(t.host)" title="点击复制 IP">{{ t.host }}</small>
           </div>
           <el-icon class="session-close" @click.stop="closeTerminal(t.id)"><Close /></el-icon>
         </div>
@@ -61,6 +62,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { Plus, Search, Close, Monitor, ArrowDown, WarningFilled } from '@element-plus/icons-vue'
 import '@xterm/xterm/css/xterm.css'
+import { ElMessage } from 'element-plus'
 import api from '../../api'
 
 const route = useRoute()
@@ -103,7 +105,7 @@ function addTerminal() {
   const server = servers.value.find(s => Number(s.id) === Number(currentServerId.value))
   if (!server) return
   const id = `term_${Date.now()}_${Math.random().toString(16).slice(2)}`
-  terminals.value.push({ id, name: server.name, serverId: server.id, error: '', composerText: '' })
+  terminals.value.push({ id, name: server.name, host: server.host, serverId: server.id, error: '', composerText: '' })
   activeTab.value = id
   nextTick(() => initTerminal(terminals.value.find(t => t.id === id)))
 }
@@ -166,6 +168,10 @@ function closeAll() {
   terminals.value.map(t => t.id).forEach(closeTerminal)
   terminals.value = []; activeTab.value = ''
 }
+
+function copyIp(ip) {
+  navigator.clipboard?.writeText(ip).then(() => ElMessage.success(`已复制 ${ip}`)).catch(() => {})
+}
 </script>
 
 <style scoped>
@@ -210,6 +216,8 @@ function closeAll() {
 .session-info { flex: 1; min-width: 0; }
 .session-info strong { display: block; font-size: 13px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-info small { font-size: 11px; color: var(--text-muted); }
+.session-ip { font-family: 'JetBrains Mono', ui-monospace, monospace; cursor: pointer; transition: color 0.15s; }
+.session-ip:hover { color: var(--primary-color); }
 .session-close { color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 4px; flex-shrink: 0; }
 .session-close:hover { color: var(--color-danger); background: var(--color-danger-soft); }
 .sidebar-empty { padding: 40px 0; text-align: center; color: var(--text-muted); font-size: 13px; }
