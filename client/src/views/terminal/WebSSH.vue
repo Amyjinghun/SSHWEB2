@@ -170,7 +170,21 @@ function closeAll() {
 }
 
 function copyIp(ip) {
-  navigator.clipboard?.writeText(ip).then(() => ElMessage.success(`已复制 ${ip}`)).catch(() => {})
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(ip).then(() => ElMessage.success(`已复制 ${ip}`)).catch(() => doFallbackCopy(ip))
+  } else {
+    doFallbackCopy(ip)
+  }
+}
+function doFallbackCopy(text) {
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  try { document.execCommand('copy'); ElMessage.success(`已复制 ${text}`) } catch {}
+  document.body.removeChild(ta)
 }
 </script>
 
