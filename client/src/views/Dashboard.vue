@@ -93,8 +93,8 @@
               <div class="mc-details">
                 <div><span>负载</span><strong>{{ s.load_avg || '-' }}</strong></div>
                 <div><span>运行</span><strong :title="s.uptime || ''">{{ s.uptime || '-' }}</strong></div>
-                <div><span>下行</span><strong>{{ bytes(s.network_rx_bytes) }}</strong></div>
-                <div><span>上行</span><strong>{{ bytes(s.network_tx_bytes) }}</strong></div>
+                <div><span>下行</span><strong>{{ rateStr(s._rxRate) }} <small style="font-size:10px;opacity:.5;font-weight:400">{{ bytes(s.network_rx_bytes) }}</small></strong></div>
+                <div><span>上行</span><strong>{{ rateStr(s._txRate) }} <small style="font-size:10px;opacity:.5;font-weight:400">{{ bytes(s.network_tx_bytes) }}</small></strong></div>
               </div>
             </article>
           </div>
@@ -259,11 +259,15 @@ function bytes(v) {
   if (n <= 0) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   let i = 0
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024
-    i += 1
-  }
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i += 1 }
   return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`
+}
+function rateStr(bps) {
+  if (!bps || bps < 1) return '0 B/s'
+  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s']
+  let i = 0, n = bps
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
+  return n.toFixed(i === 0 ? 0 : 1) + ' ' + units[i]
 }
 function statusText(status) {
   return status === 'online' ? '在线' : status === 'offline' ? '离线' : '未知'
@@ -276,8 +280,22 @@ function connectMonitor() {
   const token = localStorage.getItem('token')
   if (!token) return
   monitorSocket = io('/monitor', { auth: { token }, transports: ['websocket'] })
+  const prevNet = {}
   monitorSocket.on('snapshot', (list) => {
-    monitorServers.value = list || []
+    const now = Date.now()
+    monitorServers.value = (list || []).map(s => {
+      const prev = prevNet[s.id]
+      let rxRate = 0, txRate = 0
+      if (prev) {
+        const dt = (now - prev.t) / 1000
+        if (dt > 0) {
+          rxRate = Math.max(0, (num(s.network_rx_bytes) - prev.rx) / dt)
+          txRate = Math.max(0, (num(s.network_tx_bytes) - prev.tx) / dt)
+        }
+      }
+      prevNet[s.id] = { rx: num(s.network_rx_bytes), tx: num(s.network_tx_bytes), t: now }
+      return { ...s, _rxRate: rxRate, _txRate: txRate }
+    })
     monitorLoaded.value = true
   })
   monitorSocket.on('connect_error', () => { monitorLoaded.value = true })

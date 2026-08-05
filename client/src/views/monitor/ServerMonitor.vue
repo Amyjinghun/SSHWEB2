@@ -106,8 +106,8 @@
           <div class="mc-details">
             <div><span>负载</span><strong>{{ server.load_avg || '-' }}</strong></div>
             <div><span>运行</span><strong :title="server.uptime || ''">{{ server.uptime || '-' }}</strong></div>
-            <div><span>下行</span><strong>{{ bytes(server.network_rx_bytes) }}</strong></div>
-            <div><span>上行</span><strong>{{ bytes(server.network_tx_bytes) }}</strong></div>
+            <div><span>下行</span><strong>{{ rateStr(server._rxRate) }} <small style="font-size:10px;opacity:.5;font-weight:400">{{ bytes(server.network_rx_bytes) }}</small></strong></div>
+            <div><span>上行</span><strong>{{ rateStr(server._txRate) }} <small style="font-size:10px;opacity:.5;font-weight:400">{{ bytes(server.network_tx_bytes) }}</small></strong></div>
             <div><span>TCP</span><strong>{{ server.tcp_connections ?? '-' }}</strong></div>
             <div><span>UDP</span><strong>{{ server.udp_connections ?? '-' }}</strong></div>
           </div>
@@ -204,12 +204,26 @@ function connectMonitor() {
     connected.value = false
     loaded.value = true
   })
+  const prevNet = {}
   socket.on('snapshot', (list) => {
+    const now = Date.now()
     servers.value = (list || []).map(s => {
       let info = s.system_info
       if (typeof info === 'string') { try { info = JSON.parse(info) } catch { info = {} } }
       s._sys = info || {}
       s._expiry = expiryDisplay(s.expires_at)
+      const prev = prevNet[s.id]
+      let rxRate = 0, txRate = 0
+      if (prev) {
+        const dt = (now - prev.t) / 1000
+        if (dt > 0) {
+          rxRate = Math.max(0, (num(s.network_rx_bytes) - prev.rx) / dt)
+          txRate = Math.max(0, (num(s.network_tx_bytes) - prev.tx) / dt)
+        }
+      }
+      prevNet[s.id] = { rx: num(s.network_rx_bytes), tx: num(s.network_tx_bytes), t: now }
+      s._rxRate = rxRate
+      s._txRate = txRate
       return s
     })
     updatedAt.value = new Date().toISOString()
@@ -222,6 +236,13 @@ function disconnectMonitor() {
   socket = null
 }
 
+function rateStr(bps) {
+  if (!bps || bps < 1) return '0 B/s'
+  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s']
+  let i = 0, n = bps
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
+  return n.toFixed(i === 0 ? 0 : 1) + ' ' + units[i]
+}
 function num(value) {
   const n = Number(value)
   return Number.isFinite(n) ? n : 0
