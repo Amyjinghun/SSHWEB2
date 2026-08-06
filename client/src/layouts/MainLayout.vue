@@ -1,6 +1,6 @@
 <template>
   <el-container class="main-layout">
-    <el-aside :width="isCollapse ? '64px' : '220px'" class="sidebar dark-sidebar">
+    <el-aside :width="isMobile ? '0' : (isCollapse ? '64px' : '220px')" class="sidebar dark-sidebar" :class="{ 'mobile-sidebar': isMobile, 'mobile-sidebar--open': isMobile && mobileMenuOpen }">
       <div class="logo" @click="$router.push('/dashboard')">
         <svg viewBox="0 0 32 32" width="30" height="30" class="logo-icon">
           <defs>
@@ -16,7 +16,7 @@
           <span v-show="!isCollapse" class="logo-text">SSHWeb</span>
         </transition>
       </div>
-      <el-menu :default-active="$route.path" router :collapse="isCollapse" background-color="#0f172a" text-color="#94a3b8" active-text-color="#fff">
+      <el-menu :default-active="$route.path" router :collapse="isCollapse" background-color="#0f172a" text-color="#94a3b8" active-text-color="#fff" @select="mobileMenuOpen = false">
         <el-menu-item index="/dashboard">
           <el-icon><Monitor /></el-icon>
           <template #title>首页</template>
@@ -93,9 +93,10 @@
     <el-container>
       <el-header class="header">
         <div class="header-left">
-          <el-icon class="collapse-btn" @click="isCollapse = !isCollapse">
+          <el-icon v-if="!isMobile" class="collapse-btn" @click="isCollapse = !isCollapse">
             <Fold v-if="!isCollapse" /><Expand v-else />
           </el-icon>
+          <el-icon v-else class="collapse-btn" @click="mobileMenuOpen = true"><Expand /></el-icon>
           <el-breadcrumb separator="/">
             <el-breadcrumb-item>{{ $route.meta.title || '首页' }}</el-breadcrumb-item>
           </el-breadcrumb>
@@ -105,7 +106,7 @@
           <el-dropdown @command="handleCommand">
             <span class="user-info">
               <el-avatar :size="32" style="background:linear-gradient(135deg,#0891b2,#06b6d4);font-weight:600">{{ userStore.userInfo?.username?.[0] || 'A' }}</el-avatar>
-              <span class="user-name">{{ userStore.userInfo?.username || '管理员' }}</span>
+              <span class="user-name" v-show="!isMobile">{{ userStore.userInfo?.username || '管理员' }}</span>
               <el-icon class="arrow-icon"><ArrowDown /></el-icon>
             </span>
             <template #dropdown>
@@ -138,11 +139,12 @@
         <el-button type="primary" @click="changePassword">确定</el-button>
       </template>
     </el-dialog>
+    <div v-if="isMobile && mobileMenuOpen" class="mobile-overlay" @click="mobileMenuOpen = false"></div>
   </el-container>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import api from '../api'
@@ -152,12 +154,25 @@ const router = useRouter()
 const userStore = useUserStore()
 const isCollapse = ref(false)
 const isDark = ref(localStorage.getItem('theme') === 'dark')
+const isMobile = ref(false)
+const mobileMenuOpen = ref(false)
 const showPasswordDialog = ref(false)
 const passwordForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
+
+function checkMobile() {
+  isMobile.value = window.innerWidth < 768
+  if (!isMobile.value) mobileMenuOpen.value = false
+}
 
 onMounted(() => {
   userStore.getUserInfo()
   document.documentElement.classList.toggle('dark', isDark.value)
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', checkMobile)
 })
 
 function toggleTheme() {
@@ -273,6 +288,29 @@ async function changePassword() {
 .main-content {
   background: var(--bg-color);
   overflow-y: auto;
+}
+
+/* 移动端侧边栏抽屉 */
+.mobile-sidebar {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 220px !important;
+  z-index: 200;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+}
+.mobile-sidebar--open {
+  transform: translateX(0);
+  box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+}
+.mobile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(2px);
 }
 
 .el-menu { border-right: none !important; }
