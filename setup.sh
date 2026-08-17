@@ -103,6 +103,9 @@ copy_project_files() {
       --exclude='./server/node_modules' \
       --exclude='./.git' \
       --exclude='./.claude' \
+      --exclude='./.env' \
+      --exclude='./server/.env' \
+      --exclude='./logs' \
       -cf - .
   ) | (
     cd "${target}"
@@ -113,8 +116,10 @@ read_default() {
   local prompt="$1"
   local default="$2"
   local var="$3"
+  local input
   read -p "  ${prompt} [${default}]: " input
-  eval "${var}=\${input:-${default}}"
+  # printf -v 不做二次展开：密码含 $ / 反引号时原样保留（eval 会把 $$ 等展开成别的内容）
+  printf -v "$var" '%s' "${input:-$default}"
 }
 
 confirm_action() {
@@ -253,10 +258,12 @@ do_install() {
       step_done "$DB_SERVICE 已启动"
     fi
 
+    # 密码里的单引号按 SQL 语法双写转义，避免建用户语句被截断
+    local DB_PASS_SQL="${DB_PASS//\'/\'\'}"
     mysql -u root <<EOF
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
-ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS_SQL}';
+ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS_SQL}';
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
 FLUSH PRIVILEGES;
 EOF
@@ -265,7 +272,7 @@ EOF
     # 远程模式：测试连接，跳过本地安装
     echo -e "  ${YELLOW}远程数据库模式，跳过本地安装${NC}"
     if command -v mysql &>/dev/null; then
-      if mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" -e "USE \`${DB_NAME}\`;" 2>/dev/null; then
+      if MYSQL_PWD="${DB_PASS}" mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -e "USE \`${DB_NAME}\`;" 2>/dev/null; then
         step_done "远程数据库连接成功"
       else
         step_fail "远程数据库连接失败，请检查主机/端口/用户名/密码，以及数据库是否已创建"
@@ -274,7 +281,7 @@ EOF
     else
       echo -e "  ${YELLOW}安装 mysql-client 用于测试连接...${NC}"
       apt-get install -y mariadb-client
-      if mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" -e "USE \`${DB_NAME}\`;" 2>/dev/null; then
+      if MYSQL_PWD="${DB_PASS}" mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -e "USE \`${DB_NAME}\`;" 2>/dev/null; then
         step_done "远程数据库连接成功"
       else
         step_fail "远程数据库连接失败，请检查主机/端口/用户名/密码，以及数据库是否已创建"
@@ -304,8 +311,8 @@ EOF
   sed "s/USE \`sshweb\`/USE \`${DB_NAME}\`/g" \
     "${INSTALL_DIR}/database/seed.sql" > "${TEMP_SEED}"
 
-  mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" < "${TEMP_SCHEMA}"
-  mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" < "${TEMP_SEED}"
+  MYSQL_PWD="${DB_PASS}" mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" < "${TEMP_SCHEMA}"
+  MYSQL_PWD="${DB_PASS}" mysql -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" < "${TEMP_SEED}"
   rm -f "${TEMP_SCHEMA}" "${TEMP_SEED}"
   step_done "数据库初始化完成"
 
@@ -313,7 +320,7 @@ EOF
   step_info "5/7" "安装依赖并构建"
   cd "${INSTALL_DIR}/server"
   rm -rf node_modules
-  npm install --production
+  npm install --omit=dev
   step_done "后端依赖安装完成"
   cd "${INSTALL_DIR}/client"
   rm -rf node_modules dist
@@ -377,12 +384,11 @@ verify_installation() {
   echo -e "${BOLD}${YELLOW}  安装验证${NC}"
 
   sleep 2
-  local PM2_STATUS
-  PM2_STATUS=$(pm2 jlist 2>/dev/null | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
-  if [ "$PM2_STATUS" = "online" ]; then
+  # 按进程名取状态：jlist 取列表第一个进程，机器上有其他 pm2 应用时会误报
+  if [ "$(pm2 pid sshweb 2>/dev/null)" -gt 0 ] 2>/dev/null; then
     step_done "服务进程: 运行中 (online)"
   else
-    step_fail "服务进程: ${PM2_STATUS:-未检测到}"
+    step_fail "服务进程: 未运行"
     step_warn "请执行 pm2 logs sshweb 查看错误日志"
   fi
 
@@ -618,6 +624,12 @@ do_update() {
     return 1
   fi
 
+  # 安装模式判定：docker-compose.custom.yml 只在 Docker 模式下生成
+  local IS_DOCKER=false
+  if [ -f "${INSTALL_DIR}/docker-compose.custom.yml" ]; then
+    IS_DOCKER=true
+  fi
+
   # ──── 步骤 1: 备份配置 ────
   step_info "1/4" "备份配置文件"
   local BACKUP_ENV="${INSTALL_DIR}/.env.bak.$(date +%Y%m%d%H%M%S)"
@@ -626,6 +638,45 @@ do_update() {
     step_done "配置已备份到 ${BACKUP_ENV}"
   fi
 
+  if $IS_DOCKER; then
+    # ──── Docker 模式：拷文件 → 重建镜像 → 重建容器（构建期间旧容器继续服务） ────
+    step_info "2/4" "Docker 模式更新"
+    if ! command -v docker &>/dev/null; then
+      step_fail "未找到 docker 命令"
+      return 1
+    fi
+    if [ ! -f "${SCRIPT_DIR}/Dockerfile" ]; then
+      step_fail "请在项目根目录运行此脚本"
+      return 1
+    fi
+    copy_project_files "${INSTALL_DIR}"
+    step_done "文件已更新"
+
+    step_info "3/4" "重建镜像 (可能需要几分钟)"
+    docker compose -f "${INSTALL_DIR}/docker-compose.custom.yml" build --no-cache
+    step_done "镜像已重建"
+
+    step_info "4/4" "重建容器"
+    docker compose -f "${INSTALL_DIR}/docker-compose.custom.yml" up -d
+    step_done "容器已重建"
+
+    sleep 5
+    local APP_STATUS
+    APP_STATUS=$(docker ps --filter "name=sshweb-app" --format "{{.Status}}" 2>/dev/null)
+    if echo "${APP_STATUS}" | grep -q "Up"; then
+      step_done "应用容器: ${APP_STATUS}"
+      echo ""
+      step_done "SSHWeb 更新完成!"
+    else
+      step_fail "应用容器未运行"
+      step_warn "查看日志: docker logs sshweb-app --tail 30"
+      return 1
+    fi
+    echo ""
+    return 0
+  fi
+
+  # ──── PM2 模式 ────
   # ──── 步骤 2: 停止服务 ────
   step_info "2/4" "停止服务"
   if command -v pm2 &>/dev/null && pm2 list 2>/dev/null | grep -q "sshweb"; then
@@ -641,7 +692,7 @@ do_update() {
   cp -r "${SCRIPT_DIR}/server/package.json" "${INSTALL_DIR}/server/"
   cd "${INSTALL_DIR}/server"
   rm -rf node_modules
-  npm install --production
+  npm install --omit=dev
   step_done "后端已更新"
 
   # 更新前端
@@ -849,7 +900,7 @@ do_docker_install() {
   # 外部数据库：测试连接 + 导入表结构
   if [ "$DB_MODE" = "2" ]; then
     echo -e "  ${YELLOW}测试远程数据库连接...${NC}"
-    if ! docker run --rm mariadb:11 mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" -p"${DB_PASS}" -e "SELECT 1" >/dev/null 2>&1; then
+    if ! docker run --rm -e MYSQL_PWD="${DB_PASS}" mariadb:11 mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" -e "SELECT 1" >/dev/null 2>&1; then
       step_fail "远程数据库连接失败"
       step_warn "请检查: 主机/端口/用户名/密码、远程是否放通 ${DB_PORT}、用户是否允许从本机 IP 连接"
       exit 1
@@ -862,11 +913,24 @@ do_docker_install() {
     TEMP_SEED=$(mktemp)
     sed '/^CREATE DATABASE/d; /^USE /d' "${INSTALL_DIR}/database/schema.sql" > "${TEMP_SCHEMA}"
     sed '/^USE /d' "${INSTALL_DIR}/database/seed.sql" > "${TEMP_SEED}"
-    docker run --rm -i mariadb:11 mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" -p"${DB_PASS}" "${DB_NAME}" < "${TEMP_SCHEMA}" 2>/dev/null
-    docker run --rm -i mariadb:11 mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" -p"${DB_PASS}" "${DB_NAME}" < "${TEMP_SEED}" 2>/dev/null
+    # 不吞错误输出：导入失败时直接给出原因（权限/连接），而不是静默中止
+    if ! docker run --rm -i -e MYSQL_PWD="${DB_PASS}" mariadb:11 mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" "${DB_NAME}" < "${TEMP_SCHEMA}"; then
+      step_fail "表结构导入失败（请检查用户对 ${DB_NAME} 的建表权限）"
+      rm -f "${TEMP_SCHEMA}" "${TEMP_SEED}"
+      exit 1
+    fi
+    if ! docker run --rm -i -e MYSQL_PWD="${DB_PASS}" mariadb:11 mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" "${DB_NAME}" < "${TEMP_SEED}"; then
+      step_fail "初始数据导入失败"
+      rm -f "${TEMP_SCHEMA}" "${TEMP_SEED}"
+      exit 1
+    fi
     rm -f "${TEMP_SCHEMA}" "${TEMP_SEED}"
     step_done "数据库表结构已导入"
   fi
+
+  # compose 会对环境变量值做 $ 插值，密码中的 $ 需写成 $$ 才能字面保留
+  local DB_PASS_YAML="${DB_PASS//\$/\$\$}"
+  local DB_ROOT_PASS_YAML="${DB_ROOT_PASS//\$/\$\$}"
 
   # 生成 docker-compose 配置（根据数据库模式）
   if [ "$DB_MODE" = "2" ]; then
@@ -887,7 +951,7 @@ services:
       - MYSQL_PORT=${DB_PORT}
       - MYSQL_DATABASE=${DB_NAME}
       - MYSQL_USER=${DB_USER}
-      - MYSQL_PASSWORD=${DB_PASS}
+      - MYSQL_PASSWORD=${DB_PASS_YAML}
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - SSH_CONNECT_TIMEOUT=10000
@@ -905,7 +969,11 @@ volumes:
   sshweb-logs:
 EOF
   else
-    # 内置数据库
+    # 内置数据库：不能直接挂原版 schema/seed，其中的 USE `sshweb` 会把表建到
+    # 字面量 sshweb 库，自定义库名时应用连不上。去掉建库/USE 行，
+    # 由容器按 MYSQL_DATABASE 建库后执行
+    sed '/^CREATE DATABASE/d; /^USE /d' "${INSTALL_DIR}/database/schema.sql" > "${INSTALL_DIR}/database/schema.docker.sql"
+    sed '/^USE /d' "${INSTALL_DIR}/database/seed.sql" > "${INSTALL_DIR}/database/seed.docker.sql"
     cat > "${INSTALL_DIR}/docker-compose.custom.yml" <<EOF
 version: '3.8'
 
@@ -922,7 +990,7 @@ services:
       - MYSQL_PORT=3306
       - MYSQL_DATABASE=${DB_NAME}
       - MYSQL_USER=${DB_USER}
-      - MYSQL_PASSWORD=${DB_PASS}
+      - MYSQL_PASSWORD=${DB_PASS_YAML}
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - SSH_CONNECT_TIMEOUT=10000
@@ -940,14 +1008,14 @@ services:
     container_name: sshweb-db
     restart: always
     environment:
-      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS}
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASS_YAML}
       - MYSQL_DATABASE=${DB_NAME}
       - MYSQL_USER=${DB_USER}
-      - MYSQL_PASSWORD=${DB_PASS}
+      - MYSQL_PASSWORD=${DB_PASS_YAML}
     volumes:
       - sshweb-db-data:/var/lib/mysql
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+      - ./database/schema.docker.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./database/seed.docker.sql:/docker-entrypoint-initdb.d/02-seed.sql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
