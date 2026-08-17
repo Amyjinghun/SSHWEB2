@@ -13,7 +13,7 @@
           <text x="16" y="22" text-anchor="middle" fill="white" font-size="18" font-weight="bold">S</text>
         </svg>
         <transition name="fade">
-          <span v-show="!isCollapse" class="logo-text">SSHWeb</span>
+          <span v-show="!isCollapse" class="logo-text">{{ systemName }}</span>
         </transition>
       </div>
       <el-menu :default-active="$route.path" router :collapse="isCollapse" background-color="#0f172a" text-color="#94a3b8" active-text-color="#fff" @select="mobileMenuOpen = false">
@@ -144,14 +144,18 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
+import { useSettingsStore } from '../stores/settings'
 import api from '../api'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const userStore = useUserStore()
+const settingsStore = useSettingsStore()
+// 侧边栏系统名称来自系统设置
+const systemName = computed(() => settingsStore.settings?.system_name || 'SSHWeb')
 const isCollapse = ref(false)
 const isDark = ref(localStorage.getItem('theme') === 'dark')
 const isMobile = ref(false)
@@ -166,6 +170,7 @@ function checkMobile() {
 
 onMounted(() => {
   userStore.getUserInfo()
+  settingsStore.load().catch(() => {})
   document.documentElement.classList.toggle('dark', isDark.value)
   checkMobile()
   window.addEventListener('resize', checkMobile)
@@ -198,8 +203,14 @@ async function changePassword() {
   if (newPassword !== confirmPassword) return ElMessage.warning('两次密码不一致')
   if (newPassword.length < 6) return ElMessage.warning('密码至少6位')
   const res = await api.post('/api/auth/change-password', { oldPassword, newPassword })
-  if (res.code === 0) { ElMessage.success('密码修改成功'); showPasswordDialog.value = false }
-  else ElMessage.error(res.message)
+  if (res.code === 0) {
+    ElMessage.success('密码已修改，请重新登录')
+    showPasswordDialog.value = false
+    // 改密后旧 token 全部失效（token_version+1），直接回登录页
+    api.post('/api/auth/logout').catch(() => {})
+    userStore.logout()
+    router.push('/login')
+  } else ElMessage.error(res.message)
 }
 </script>
 

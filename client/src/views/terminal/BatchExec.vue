@@ -93,15 +93,17 @@ async function execute() {
 
 async function pollResults(taskId) {
   const poll = async () => {
-    const res = await api.get(`/api/commands/batch-tasks/${taskId}`)
-    if (res.code === 0) {
-      results.value = res.data.logs || []
-      if (['running', 'pending'].includes(res.data.status)) {
-        setTimeout(poll, 2000)
-      } else {
-        executing.value = false
+    try {
+      const res = await api.get(`/api/commands/batch-tasks/${taskId}`)
+      if (res.code === 0) {
+        results.value = res.data.logs || []
+        if (['running', 'pending'].includes(res.data.status)) {
+          setTimeout(poll, 2000)
+          return
+        }
       }
-    }
+    } catch { /* 拉取失败也结束轮询，避免按钮永久卡在加载中 */ }
+    executing.value = false
   }
   poll()
 }

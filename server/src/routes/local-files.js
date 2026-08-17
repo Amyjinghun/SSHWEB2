@@ -3,13 +3,14 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, roleMiddleware } = require('../middleware/auth');
 const { createSSHConnection } = require('../ssh/connection');
 const { writeAuditLog } = require('../utils/audit');
 const db = require('../db');
 
 const router = express.Router();
-router.use(authMiddleware);
+// 本机文件可触达面板全盘（含 .env 等敏感文件），仅管理员可用
+router.use(authMiddleware, roleMiddleware('superadmin', 'admin'));
 
 function getSftp(conn) {
   return new Promise((resolve, reject) => {

@@ -39,12 +39,24 @@
         <div v-for="t in terminals" :key="t.id" v-show="t.id === activeTab" class="term-shell">
           <div class="term-screen-wrapper">
             <div :ref="el => setTermRef(t.id, el)" class="term-screen" @click="focusTerm(t.id)"></div>
+            <div v-if="searchVisible && activeTab === t.id" class="term-search-bar">
+              <input ref="searchInputEl" v-model="searchText" placeholder="搜索终端内容…" @keyup.enter="doSearch(true)" @keyup.esc="closeSearch" />
+              <button type="button" @click="doSearch(false)" title="上一个">↑</button>
+              <button type="button" @click="doSearch(true)" title="下一个">↓</button>
+              <button type="button" @click="closeSearch" title="关闭">✕</button>
+            </div>
+            <button class="scroll-bottom-btn" style="right:50px" title="搜索 (Ctrl+F)" @click.stop="openSearch">
+              <el-icon><Search /></el-icon>
+            </button>
             <button class="scroll-bottom-btn" title="滚动到底部" @click.stop="scrollToBottom(t.id)">
               <el-icon><ArrowDown /></el-icon>
             </button>
           </div>
           <form class="term-composer" @submit.prevent="sendComposer(t)">
-            <input v-model="t.composerText" placeholder="输入命令后回车发送…" autocomplete="off" spellcheck="false" />
+            <input v-model="t.composerText" :placeholder="broadcastMode ? '广播模式：命令将同时发送到 ' + terminals.length + ' 个会话…' : '输入命令后回车发送…'" autocomplete="off" spellcheck="false" />
+            <button type="button" class="broadcast-btn" :class="{ on: broadcastMode }" :title="broadcastMode ? '点击关闭广播' : '开启广播：输入将发送到所有会话'" @click="broadcastMode = !broadcastMode">
+              <el-icon><Promotion /></el-icon>广播
+            </button>
             <button type="submit">发送</button>
           </form>
           <div v-if="t.error" class="term-error"><el-icon><WarningFilled /></el-icon> {{ t.error }}</div>
@@ -60,10 +72,13 @@ import { useRoute } from 'vue-router'
 import { io } from 'socket.io-client'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { Plus, Search, Close, Monitor, ArrowDown, WarningFilled } from '@element-plus/icons-vue'
+import { SearchAddon } from '@xterm/addon-search'
+import { WebLinksAddon } from '@xterm/addon-web-links'
+import { Plus, Search, Close, Monitor, ArrowDown, WarningFilled, Promotion } from '@element-plus/icons-vue'
 import '@xterm/xterm/css/xterm.css'
 import { ElMessage } from 'element-plus'
 import api from '../../api'
+import { getTerminalPrefs, terminalTheme } from '../../utils/terminal-prefs'
 
 const route = useRoute()
 const servers = ref([])
@@ -76,14 +91,16 @@ const termInstances = {}
 const sockets = {}
 const resizeObservers = {}
 
-const TERMINAL_THEME = {
-  background: '#0b1214', foreground: '#d8dddc', cursor: '#0891b2', cursorAccent: '#0b1214',
-  selectionBackground: 'rgba(8, 145, 178, 0.22)',
-  black: '#1d2426', red: '#d86f74', green: '#91b56d', yellow: '#d5ae62',
-  blue: '#76a4c7', magenta: '#ad8bb8', cyan: '#72aaa7', white: '#c9cecd',
-  brightBlack: '#687376', brightRed: '#e68589', brightGreen: '#a7c982', brightYellow: '#e3c27b',
-  brightBlue: '#8bb9dc', brightMagenta: '#c19bcb', brightCyan: '#8cc2be', brightWhite: '#f0f2f1',
-}
+// 终端主题/字号来自系统设置，onMounted 时加载
+let termPrefs = { fontSize: 13, theme: 'dark' }
+
+// 广播模式：composer 输入同时发送到所有已连接会话
+const broadcastMode = ref(false)
+// 终端内搜索（Ctrl+F 或右上角按钮）
+const searchVisible = ref(false)
+const searchText = ref('')
+const searchInputEl = ref(null)
+const SEARCH_OPTIONS = { decorations: { matchBackground: '#f59e0b', matchOverviewRuler: '#f59e0b', activeMatchBackground: '#fb923c', activeMatchColor: '#0b1214' } }
 
 const filteredTerminals = computed(() => {
   const kw = searchKeyword.value.trim().toLowerCase()
@@ -91,9 +108,25 @@ const filteredTerminals = computed(() => {
   return terminals.value.filter(t => t.name.toLowerCase().includes(kw))
 })
 
+// btoa/atob 只支持 Latin-1：中文输入会让 btoa 抛错，中文输出会被当 Latin-1 显示成乱码。
+// 服务端传输的是 UTF-8 字节的 base64，这里按字节编解码，交给 xterm 的 UTF-8 解码器处理。
+function encodeBase64(str) {
+  const bytes = new TextEncoder().encode(str)
+  let binary = ''
+  for (const b of bytes) binary += String.fromCharCode(b)
+  return btoa(binary)
+}
+function decodeBase64(b64) {
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
 onMounted(async () => {
-  const res = await api.get('/api/servers')
+  const [res, prefs] = await Promise.all([api.get('/api/servers'), getTerminalPrefs()])
   if (res.code === 0) servers.value = res.data
+  termPrefs = prefs
   if (route.query.server_id) { currentServerId.value = Number(route.query.server_id); addTerminal() }
 })
 onBeforeUnmount(() => { closeAll() })
@@ -113,23 +146,34 @@ function addTerminal() {
 function initTerminal(term) {
   const el = termRefs[term.id]
   if (!el) return
-  const terminal = new Terminal({ theme: TERMINAL_THEME, fontSize: 13, fontFamily: '"Cascadia Code","JetBrains Mono","Fira Code",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace', lineHeight: 1.25, cursorBlink: true, cursorStyle: 'bar', scrollback: 5000, convertEol: true })
+  const terminal = new Terminal({ theme: terminalTheme(termPrefs.theme), fontSize: termPrefs.fontSize, fontFamily: '"Cascadia Code","JetBrains Mono","Fira Code",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace', lineHeight: 1.25, cursorBlink: true, cursorStyle: 'bar', scrollback: 5000, convertEol: true })
   const fitAddon = new FitAddon()
+  const searchAddon = new SearchAddon()
   terminal.loadAddon(fitAddon)
+  terminal.loadAddon(searchAddon)
+  terminal.loadAddon(new WebLinksAddon())
   terminal.open(el)
   fitAddon.fit()
-  termInstances[term.id] = { terminal, fitAddon }
+  termInstances[term.id] = { terminal, fitAddon, searchAddon }
+  // Ctrl+F 唤起终端内搜索
+  terminal.attachCustomKeyEventHandler(ev => {
+    if (ev.type === 'keydown' && ev.ctrlKey && !ev.altKey && !ev.metaKey && ev.key.toLowerCase() === 'f') {
+      openSearch()
+      return false
+    }
+    return true
+  })
 
   const token = localStorage.getItem('token')
   const socket = io('/ssh', { auth: { token }, transports: ['websocket'] })
   sockets[term.id] = socket
   socket.on('connect', () => { terminal.write('\r\n\x1b[36m正在连接...\x1b[0m\r\n'); socket.emit('open', term.serverId) })
   socket.on('connected', () => { term.error = ''; terminal.write('\r\n\x1b[32m--- 已连接 ---\x1b[0m\r\n'); try { fitAddon.fit() } catch {}; terminal.focus() })
-  socket.on('data', (data) => terminal.write(atob(data)))
+  socket.on('data', (data) => terminal.write(decodeBase64(data)))
   socket.on('error', (msg) => { term.error = typeof msg === 'string' ? msg : (msg?.message || '连接失败'); terminal.write(`\r\n\x1b[31m错误: ${term.error}\x1b[0m\r\n`) })
   socket.on('connect_error', (err) => { term.error = err.message || '连接失败' })
   socket.on('closed', () => terminal.write('\r\n\x1b[33m--- 连接已关闭 ---\x1b[0m\r\n'))
-  terminal.onData((data) => socket.emit('data', btoa(data)))
+  terminal.onData((data) => socket.emit('data', encodeBase64(data)))
   terminal.onResize(({ cols, rows }) => socket.emit('resize', { cols, rows }))
 
   const resizeObs = new ResizeObserver(() => { try { fitAddon.fit(); socket.emit('resize', { cols: terminal.cols, rows: terminal.rows }) } catch {} })
@@ -144,12 +188,34 @@ function switchTerminal(id) {
 
 function sendComposer(term) {
   const text = term.composerText; if (!text) return
-  sockets[term.id]?.emit('data', btoa(text + '\r'))
+  if (broadcastMode.value) {
+    // 广播：同一命令发到所有已连接会话
+    terminals.value.forEach(t => sockets[t.id]?.emit('data', encodeBase64(text + '\r')))
+  } else {
+    sockets[term.id]?.emit('data', encodeBase64(text + '\r'))
+  }
   term.composerText = ''
   termInstances[term.id]?.terminal?.focus()
 }
 
 function scrollToBottom(id) { const t = termInstances[id]; if (t) { t.terminal.scrollToBottom(); t.terminal.focus() } }
+
+function openSearch() {
+  searchVisible.value = true
+  nextTick(() => searchInputEl.value?.focus())
+}
+function doSearch(forward) {
+  const inst = termInstances[activeTab.value]
+  if (!inst?.searchAddon || !searchText.value) return
+  if (forward) inst.searchAddon.findNext(searchText.value, SEARCH_OPTIONS)
+  else inst.searchAddon.findPrevious(searchText.value, SEARCH_OPTIONS)
+}
+function closeSearch() {
+  searchVisible.value = false
+  const inst = termInstances[activeTab.value]
+  try { inst?.searchAddon?.clearDecorations() } catch {}
+  inst?.terminal?.focus()
+}
 function focusTerm(id) { termInstances[id]?.terminal?.focus() }
 
 function closeTerminal(id) {
@@ -266,7 +332,7 @@ function doFallbackCopy(text) {
 .scroll-bottom-btn:hover { color: #d8dddc; border-color: var(--primary-color); opacity: 1; }
 
 .term-composer {
-  position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px; padding: 9px 10px; border-top: 1px solid #29383a; background: #111a1d;
 }
 .term-composer input {
@@ -277,6 +343,32 @@ function doFallbackCopy(text) {
 .term-composer input:focus { border-color: var(--primary-color); }
 .term-composer input::placeholder { color: #5a6a68; }
 .term-composer button { border: 0; border-radius: 8px; padding: 0 16px; color: #05251c; background: var(--primary-color); font-weight: 700; font-size: 13px; cursor: pointer; }
+
+.term-composer .broadcast-btn {
+  border: 1px solid #29383a; border-radius: 8px; padding: 0 12px;
+  color: #8a9695; background: transparent; font-weight: 600; font-size: 12px;
+  display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.term-composer .broadcast-btn:hover { color: #d8dddc; border-color: var(--primary-color); }
+.term-composer .broadcast-btn.on { color: #05251c; background: #f59e0b; border-color: #f59e0b; }
+
+.term-search-bar {
+  position: absolute; z-index: 4; top: 9px; left: 10px;
+  display: flex; gap: 6px; align-items: center;
+  padding: 5px 7px; border: 1px solid #29383a; border-radius: 8px;
+  background: rgba(17,26,29,0.95); backdrop-filter: blur(6px);
+}
+.term-search-bar input {
+  width: 200px; border: 1px solid #29383a; border-radius: 6px; padding: 6px 9px;
+  color: #d8dddc; background: #0b1214; font: 12px ui-monospace, "JetBrains Mono", monospace; outline: none;
+}
+.term-search-bar input:focus { border-color: var(--primary-color); }
+.term-search-bar button {
+  border: 0; border-radius: 6px; padding: 5px 9px; color: #8a9695; background: transparent;
+  font-size: 12px; line-height: 1; cursor: pointer;
+}
+.term-search-bar button:hover { color: #d8dddc; background: rgba(8,145,178,0.18); }
 
 .term-error { color: #ef4444; padding: 16px; background: rgba(239,68,68,0.06); display: flex; align-items: center; gap: 8px; font-size: 14px; }
 

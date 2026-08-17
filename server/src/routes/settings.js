@@ -4,6 +4,7 @@ const db = require('../db');
 const { authMiddleware, roleMiddleware } = require('../middleware/auth');
 const { writeAuditLog } = require('../utils/audit');
 const { sendTelegramMessageWithConfig } = require('../services/telegram');
+const { cleanupOldData } = require('../services/cleanup');
 
 const router = express.Router();
 const settingsLimiter = rateLimit({
@@ -14,18 +15,10 @@ const settingsLimiter = rateLimit({
 
 const DEFAULT_SETTINGS = {
   system_name: 'SSHWeb',
-  login_title: 'SSHWeb server operations panel',
-  default_page_size: '20',
+  login_title: 'Linux 服务器群控 WebSSH 运维管理系统',
   terminal_theme: 'dark',
-  terminal_font_size: '14',
-  ssh_connect_timeout: '10000',
-  command_exec_timeout: '60000',
-  login_fail_limit: '5',
-  login_lock_time: '300',
-  jwt_expires_in: '7d',
+  terminal_font_size: '13',
   enable_dangerous_block: 'true',
-  dangerous_action: 'block',
-  record_terminal_log: 'false',
   allow_batch_dangerous: 'false',
   tg_enabled: 'false',
   tg_bot_token: '',
@@ -51,18 +44,24 @@ const DEFAULT_SETTINGS = {
   server_monitor_concurrency: '5',
   ip_query_provider: 'ipinfo',
   public_monitor_enabled: 'false',
-  public_monitor_key: ''
+  public_monitor_key: '',
+  cleanup_audit_days: '90',
+  cleanup_command_log_days: '90',
+  cleanup_alert_days: '90'
 };
 
 const ALLOWED_SETTING_KEYS = new Set(Object.keys(DEFAULT_SETTINGS));
 
 router.use(authMiddleware);
 
-router.get('/', async (req, res) => {
+// 设置含 tg_bot_token / public_monitor_key 等敏感值，读取与写入同样仅限管理员
+router.get('/', roleMiddleware('superadmin', 'admin'), async (req, res) => {
   try {
     const settings = await db.query('SELECT setting_key, setting_value FROM settings');
     const obj = { ...DEFAULT_SETTINGS };
-    settings.forEach(s => { obj[s.setting_key] = s.setting_value; });
+    // 只回传白名单内的键：历史残留的废弃设置（如 jwt_expires_in）不再透出，
+    // 否则前端会把它们原样 PUT 回来导致保存报错
+    settings.forEach(s => { if (ALLOWED_SETTING_KEYS.has(s.setting_key)) obj[s.setting_key] = s.setting_value; });
     const hasMonitorMode = settings.some(s => s.setting_key === 'server_monitor_mode');
     if (!hasMonitorMode && Number(obj.server_check_interval) >= 120) obj.server_monitor_mode = 'normal';
     res.json({ code: 0, data: obj });
@@ -114,10 +113,7 @@ router.post('/test-telegram', settingsLimiter, roleMiddleware('superadmin', 'adm
 router.post('/cleanup', roleMiddleware('superadmin'), async (req, res) => {
   try {
     const { audit_days = 90, command_log_days = 90, alert_days = 90 } = req.body;
-    const results = {};
-    results.audit_logs = await db.remove('DELETE FROM audit_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', [audit_days]);
-    results.command_logs = await db.remove('DELETE FROM command_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', [command_log_days]);
-    results.alert_logs = await db.remove('DELETE FROM alert_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', [alert_days]);
+    const results = await cleanupOldData({ audit_days, command_log_days, alert_days });
     await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'data_cleanup', detail: { audit_days, command_log_days, alert_days, results } });
     res.json({ code: 0, message: 'Cleanup complete', data: results });
   } catch (err) {

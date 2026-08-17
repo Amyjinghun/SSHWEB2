@@ -27,6 +27,11 @@
         <span class="status-dot online"></span>
         <span>实时监听中: {{ logPath }}</span>
         <span class="line-count">共 {{ lineCount }} 行</span>
+        <div class="log-search">
+          <el-input v-model="searchKeyword" placeholder="搜索日志…" size="small" style="width:180px" clearable @keyup.enter="doSearch(true)" />
+          <el-button size="small" @click="doSearch(false)">上一个</el-button>
+          <el-button size="small" type="primary" @click="doSearch(true)">下一个</el-button>
+        </div>
       </div>
       <div ref="terminalEl" class="log-terminal"></div>
       <div v-if="!connected && !logContent" class="empty-state">
@@ -42,8 +47,10 @@ import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { io } from 'socket.io-client'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import api from '../../api'
+import { getTerminalPrefs, terminalTheme } from '../../utils/terminal-prefs'
 
 const servers = ref([])
 const serverId = ref('')
@@ -53,7 +60,10 @@ const terminalEl = ref(null)
 const lineCount = ref(0)
 let terminal = null
 let fitAddon = null
+let searchAddon = null
 let socket = null
+// 终端主题/字号来自系统设置，onMounted 时加载
+let termPrefs = { fontSize: 13, theme: 'dark' }
 
 const commonLogs = [
   { label: '/var/log/syslog', path: '/var/log/syslog' },
@@ -67,9 +77,18 @@ const commonLogs = [
 
 const logContent = ref('')
 
+// 服务端传输的是 UTF-8 字节的 base64；按字节解码交给 xterm 的 UTF-8 解码器，中文才不会乱码
+function decodeBase64(b64) {
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
 onMounted(async () => {
-  const r = await api.get('/api/servers')
+  const [r, prefs] = await Promise.all([api.get('/api/servers'), getTerminalPrefs()])
   if (r.code === 0) servers.value = r.data
+  termPrefs = prefs
 })
 
 onBeforeUnmount(() => { stopTail() })
@@ -87,8 +106,8 @@ function startTail() {
   stopTail()
 
   terminal = new Terminal({
-    theme: { background: '#0f172a', foreground: '#e2e8f0', cursor: '#0891b2', selectionBackground: 'rgba(8,145,178,0.3)' },
-    fontSize: 13,
+    theme: terminalTheme(termPrefs.theme),
+    fontSize: termPrefs.fontSize,
     fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
     cursorBlink: false,
     disableStdin: true,
@@ -96,7 +115,9 @@ function startTail() {
     scrollback: 10000
   })
   fitAddon = new FitAddon()
+  searchAddon = new SearchAddon()
   terminal.loadAddon(fitAddon)
+  terminal.loadAddon(searchAddon)
   terminal.open(terminalEl.value)
   fitAddon.fit()
 
@@ -115,9 +136,9 @@ function startTail() {
   })
 
   socket.on('data', (data) => {
-    const text = atob(data)
-    terminal.write(text)
-    lineCount.value += (text.match(/\n/g) || []).length
+    const bytes = decodeBase64(data)
+    terminal.write(bytes)
+    lineCount.value += (new TextDecoder().decode(bytes).match(/\n/g) || []).length
   })
 
   socket.on('error', (msg) => {
@@ -138,8 +159,18 @@ function stopTail() {
   try { socket?.emit('close') } catch {}
   try { socket?.disconnect() } catch {}
   socket = null
+  searchAddon = null
   connected.value = false
   if (terminal) { terminal.dispose(); terminal = null }
+}
+
+// 终端内搜索：高亮匹配并跳转
+const searchKeyword = ref('')
+function doSearch(forward) {
+  if (!searchAddon || !searchKeyword.value.trim()) return
+  const opts = { decorations: { matchBackground: '#f59e0b', activeMatchBackground: '#fb923c', activeMatchColor: '#0b1214' } }
+  if (forward) searchAddon.findNext(searchKeyword.value, opts)
+  else searchAddon.findPrevious(searchKeyword.value, opts)
 }
 </script>
 
@@ -178,6 +209,7 @@ function stopTail() {
 .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .status-dot.online { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
 .line-count { margin-left: auto; color: #64748b; }
+.log-search { display: flex; gap: 8px; align-items: center; }
 .log-terminal {
   height: 100%;
   min-height: 0;

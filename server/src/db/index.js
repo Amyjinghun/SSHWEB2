@@ -24,6 +24,15 @@ async function ignoreDuplicateColumn(sql) {
   }
 }
 
+async function ignoreDuplicateIndex(sql) {
+  try {
+    await pool.execute(sql);
+  } catch (err) {
+    // ER_DUP_KEYNAME: index already exists. ER_NO_SUCH_TABLE may happen before initial schema import.
+    if (err.code !== 'ER_DUP_KEYNAME' && err.code !== 'ER_NO_SUCH_TABLE') throw err;
+  }
+}
+
 async function ensureSchema() {
   await ignoreDuplicateColumn('ALTER TABLE users ADD COLUMN token_version INT NOT NULL DEFAULT 0 AFTER status');
   await ignoreDuplicateColumn("ALTER TABLE scheduled_tasks ADD COLUMN target_type ENUM('server','server_list','group') NOT NULL DEFAULT 'server' AFTER name");
@@ -49,6 +58,12 @@ async function ensureSchema() {
   await ignoreDuplicateColumn('ALTER TABLE alert_rules ADD COLUMN action_ids JSON NULL COMMENT "命令模板 ID 数组，命中时在目标服务器执行" AFTER notify_channels');
   await ignoreDuplicateColumn('ALTER TABLE alert_logs ADD COLUMN action_results TEXT NULL COMMENT "动作执行结果 JSON" AFTER notify_result');
   await ignoreDuplicateColumn('ALTER TABLE alert_logs ADD COLUMN diagnosis MEDIUMTEXT NULL COMMENT "LLM 诊断结果（可选）" AFTER action_results');
+  // 日志/监控表的时间与服务器索引：列表分页、7天统计和定期清理都走索引，避免全表扫描
+  await ignoreDuplicateIndex('CREATE INDEX idx_command_logs_created_at ON command_logs (created_at)');
+  await ignoreDuplicateIndex('CREATE INDEX idx_command_logs_server_id ON command_logs (server_id)');
+  await ignoreDuplicateIndex('CREATE INDEX idx_alert_logs_created_at ON alert_logs (created_at)');
+  await ignoreDuplicateIndex('CREATE INDEX idx_audit_logs_created_at ON audit_logs (created_at)');
+  await ignoreDuplicateIndex('CREATE INDEX idx_server_metrics_server_created ON server_metrics (server_id, created_at)');
 }
 
 async function query(sql, params) {

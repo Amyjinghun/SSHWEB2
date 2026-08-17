@@ -18,8 +18,8 @@
               <text x="28" y="38" text-anchor="middle" fill="white" font-size="30" font-weight="bold">S</text>
             </svg>
           </div>
-          <h1>SSHWeb</h1>
-          <p>Linux 服务器群控 WebSSH 运维管理系统</p>
+          <h1>{{ siteInfo.system_name || 'SSHWeb' }}</h1>
+          <p>{{ siteInfo.login_title || 'Linux 服务器群控 WebSSH 运维管理系统' }}</p>
         </div>
         <el-form :model="form" @keyup.enter="handleLogin" class="login-form">
           <el-form-item>
@@ -39,7 +39,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import api from '../api'
@@ -49,6 +49,15 @@ const router = useRouter()
 const userStore = useUserStore()
 const form = ref({ username: '', password: '' })
 const loading = ref(false)
+const siteInfo = ref({ system_name: '', login_title: '' })
+
+onMounted(async () => {
+  // 站点名称/登录页标题来自公开接口，失败时用页面默认文案
+  try {
+    const res = await api.get('/api/public/site-info')
+    if (res.code === 0) siteInfo.value = res.data
+  } catch {}
+})
 
 async function handleLogin() {
   if (!form.value.username || !form.value.password) return ElMessage.warning('请输入用户名和密码')

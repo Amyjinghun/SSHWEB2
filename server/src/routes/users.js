@@ -6,6 +6,11 @@ const { authMiddleware, roleMiddleware } = require('../middleware/auth');
 const { writeAuditLog } = require('../utils/audit');
 
 const router = express.Router();
+
+const VALID_ROLES = ['superadmin', 'admin'];
+function isValidRole(role) {
+  return VALID_ROLES.includes(String(role || '').trim());
+}
 const userLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
@@ -26,6 +31,7 @@ router.post('/', userLimiter, roleMiddleware('superadmin'), async (req, res) => 
   try {
     const { username, password, role } = req.body;
     if (!username || !password) return res.json({ code: 400, message: '请输入用户名和密码' });
+    if (!isValidRole(role)) return res.json({ code: 400, message: '用户角色不合法' });
     const exists = await db.queryOne('SELECT id FROM users WHERE username = ?', [username]);
     if (exists) return res.json({ code: 400, message: '用户名已存在' });
     const hash = await bcrypt.hash(password, 10);
@@ -40,6 +46,11 @@ router.post('/', userLimiter, roleMiddleware('superadmin'), async (req, res) => 
 router.put('/:id', roleMiddleware('superadmin'), async (req, res) => {
   try {
     const { username, role, status } = req.body;
+    if (role !== undefined && !isValidRole(role)) return res.json({ code: 400, message: '用户角色不合法' });
+    if (username) {
+      const exists = await db.queryOne('SELECT id FROM users WHERE username = ? AND id != ?', [username, req.params.id]);
+      if (exists) return res.json({ code: 400, message: '用户名已存在' });
+    }
     await db.update('UPDATE users SET username=COALESCE(?,username), role=COALESCE(?,role), status=COALESCE(?,status) WHERE id=?', [username || null, role || null, status ?? null, req.params.id]);
     await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'update_user', targetType: 'user', targetId: req.params.id });
     res.json({ code: 0, message: '更新成功' });

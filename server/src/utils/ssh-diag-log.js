@@ -13,6 +13,11 @@ function append(line) {
   try {
     const dir = path.dirname(LOG_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    // 简单轮转：超过 10MB 清空重写，避免长期运行无限增长
+    try {
+      const stat = fs.statSync(LOG_FILE);
+      if (stat.size > 10 * 1024 * 1024) fs.writeFileSync(LOG_FILE, '');
+    } catch {}
     fs.appendFileSync(LOG_FILE, line);
   } catch (e) {
     // 日志写入失败不影响主流程

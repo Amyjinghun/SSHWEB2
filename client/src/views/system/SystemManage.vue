@@ -148,6 +148,9 @@ function selectByGroup(gid) {
   selectedServers.value = [...existing]
 }
 
+// 后端允许长任务跑几分钟，前端默认 30s 超时会在任务完成前就报错，按特性对齐
+const FEATURE_TIMEOUT = { update: 300000, benchmark: 120000, mirror: 120000, clean: 60000 }
+
 async function execFeature(key, action, extra = {}) {
   if (!selectedServers.value.length) return ElMessage.warning('请先选择服务器')
   running.value = true
@@ -155,7 +158,7 @@ async function execFeature(key, action, extra = {}) {
   try {
     const body = { server_ids: selectedServers.value, ...extra }
     if (action) body.action = action
-    const res = await api.post(`/api/system-manage/${key}`, body)
+    const res = await api.post(`/api/system-manage/${key}`, body, { timeout: FEATURE_TIMEOUT[key] || 30000 })
     if (res.code === 0) {
       results.value = (res.data || []).map(r => ({ ...r, action: key }))
       const ok = results.value.filter(r => r.success).length

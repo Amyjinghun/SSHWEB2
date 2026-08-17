@@ -4,6 +4,8 @@ const { createSSHConnection, execCommand, isDangerousCommand } = require('../ssh
 const config = require('../config');
 const { createAndNotifyAlert, getAlertNumber, getAlertBoolean, getSettingValue } = require('../services/telegram');
 const ruleEngine = require('../services/rule-engine');
+const { runWithConcurrency } = require('../utils/async');
+const { cleanupOldData } = require('../services/cleanup');
 
 let runningSchedulers = [];
 let statusCheckRunning = false;
@@ -411,26 +413,6 @@ async function checkOneServer(server) {
   }
 }
 
-async function runWithConcurrency(items, limit, worker) {
-  const results = [];
-  let index = 0;
-
-  async function runWorker() {
-    while (index < items.length) {
-      const current = index++;
-      try {
-        results[current] = await worker(items[current], current);
-      } catch (err) {
-        results[current] = { ok: false, error: err.message };
-      }
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(limit, items.length) }, runWorker);
-  await Promise.all(workers);
-  return results;
-}
-
 async function checkAllServers() {
   if (statusCheckRunning) return { skipped: true, message: '上一次检测仍在运行' };
   statusCheckRunning = true;
@@ -496,16 +478,22 @@ async function checkServerExpiry() {
 }
 
 async function statusLoop() {
-  await checkAllServers();
-  const modeSetting = await db.queryOne("SELECT setting_value FROM settings WHERE setting_key='server_monitor_mode'");
-  const rawInterval = await getAlertNumber('server_check_interval', 10);
-  const mode = modeSetting?.setting_value
-    ? String(modeSetting.setting_value)
-    : (rawInterval >= 120 ? 'normal' : 'realtime');
-  const intervalSeconds = mode === 'normal'
-    ? clamp(rawInterval, 120, 180)
-    : clamp(rawInterval, 5, 60);
-  statusTimer = setTimeout(statusLoop, intervalSeconds * 1000);
+  try {
+    await checkAllServers();
+    const modeSetting = await db.queryOne("SELECT setting_value FROM settings WHERE setting_key='server_monitor_mode'");
+    const rawInterval = await getAlertNumber('server_check_interval', 10);
+    const mode = modeSetting?.setting_value
+      ? String(modeSetting.setting_value)
+      : (rawInterval >= 120 ? 'normal' : 'realtime');
+    const intervalSeconds = mode === 'normal'
+      ? clamp(rawInterval, 120, 180)
+      : clamp(rawInterval, 5, 60);
+    statusTimer = setTimeout(statusLoop, intervalSeconds * 1000);
+  } catch (err) {
+    // DB 瞬断等异常不能让循环死掉，兜底 60s 后重试，否则监控会冻结到进程重启
+    console.error('状态监控循环异常，60秒后重试:', err.message);
+    statusTimer = setTimeout(statusLoop, 60 * 1000);
+  }
 }
 
 
@@ -536,6 +524,21 @@ async function getScheduledTaskServers(task) {
   return db.query('SELECT * FROM servers WHERE id = ?', [task.server_id]);
 }
 
+// 数据自动清理：每天 03:30 按系统设置的天数清理过期日志（默认 90 天）
+async function autoCleanup() {
+  try {
+    const days = {
+      audit_days: await getAlertNumber('cleanup_audit_days', 90),
+      command_log_days: await getAlertNumber('cleanup_command_log_days', 90),
+      alert_days: await getAlertNumber('cleanup_alert_days', 90)
+    };
+    const results = await cleanupOldData(days);
+    console.log(`自动数据清理完成：审计日志 ${results.audit_logs} 条，执行历史 ${results.command_logs} 条，告警记录 ${results.alert_logs} 条`);
+  } catch (err) {
+    console.error('自动数据清理失败:', err.message);
+  }
+}
+
 async function runScheduledCommandTask(task) {
   const servers = await getScheduledTaskServers(task);
   if (!servers.length) {
@@ -543,22 +546,22 @@ async function runScheduledCommandTask(task) {
     return { total: 0, success: 0, failed: 0 };
   }
 
-  let success = 0;
-  let failed = 0;
-  for (const server of servers) {
+  // 有限并发执行，批量目标不再逐台串行
+  const results = await runWithConcurrency(servers, 5, async (server) => {
     let conn;
     try {
       conn = await createSSHConnection(server);
       const result = await execCommand(conn, task.command);
-      if (result.exitCode === 0) success++; else failed++;
+      return result.exitCode === 0;
     } catch (err) {
-      failed++;
       console.error(`计划任务执行失败 [${task.name}] -> ${server.name || server.host}:`, err.message);
+      return false;
     } finally {
       try { if (conn) conn.end(); } catch {}
     }
-  }
-  return { total: servers.length, success, failed };
+  });
+  const success = results.filter(Boolean).length;
+  return { total: servers.length, success, failed: servers.length - success };
 }
 
 function startSchedulers() {
@@ -569,6 +572,10 @@ function startSchedulers() {
   setTimeout(checkServerExpiry, 15000);
   const expiryScheduler = cron.schedule('0 9 * * *', checkServerExpiry);
   runningSchedulers.push(expiryScheduler);
+
+  // 数据自动清理：每天 03:30 清理过期日志
+  const cleanupScheduler = cron.schedule('30 3 * * *', autoCleanup);
+  runningSchedulers.push(cleanupScheduler);
 
   // 计划任务执行器 - 每分钟检查，支持单台、多台和分组目标
   const taskScheduler = cron.schedule('* * * * *', async () => {

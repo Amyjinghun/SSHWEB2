@@ -257,7 +257,7 @@ function execCmd(row) { currentServer.value = row; quickCommand.value = ''; exec
 async function runQuickCmd() {
   if (!quickCommand.value) return
   execLoading.value = true
-  const res = await api.post('/api/commands/exec', { server_id: currentServer.value.id, command: quickCommand.value })
+  const res = await api.post('/api/commands/exec', { server_id: currentServer.value.id, command: quickCommand.value }, { timeout: 70000 })
   execLoading.value = false
   if (res.code === 0) execResult.value = res.data
   else ElMessage.error(res.message)

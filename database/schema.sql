@@ -102,7 +102,8 @@ CREATE TABLE IF NOT EXISTS `command_logs` (
   INDEX `idx_task_id` (`task_id`),
   INDEX `idx_user_id` (`user_id`),
   INDEX `idx_server_id` (`server_id`),
-  INDEX `idx_status` (`status`)
+  INDEX `idx_status` (`status`),
+  INDEX `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `server_metrics` (
@@ -253,7 +254,8 @@ CREATE TABLE IF NOT EXISTS `alert_logs` (
   `recovered_at` DATETIME NULL,
   INDEX `idx_server_id` (`server_id`),
   INDEX `idx_rule_id` (`rule_id`),
-  INDEX `idx_status` (`status`)
+  INDEX `idx_status` (`status`),
+  INDEX `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `audit_logs` (

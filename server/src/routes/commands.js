@@ -4,7 +4,7 @@ const db = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { createSSHConnection, execCommand, isDangerousCommand } = require('../ssh/connection');
 const { writeAuditLog } = require('../utils/audit');
-const config = require('../config');
+const { runWithConcurrency } = require('../utils/async');
 
 const router = express.Router();
 const commandLimiter = rateLimit({
@@ -67,11 +67,7 @@ router.post('/exec', commandLimiter, async (req, res) => {
     if (!server_id || !command) return res.json({ code: 400, message: '请选择服务器并输入命令' });
     const settings = await db.queryOne("SELECT setting_value FROM settings WHERE setting_key='enable_dangerous_block'");
     if (settings && settings.setting_value === 'true' && isDangerousCommand(command)) {
-      const action = await db.queryOne("SELECT setting_value FROM settings WHERE setting_key='dangerous_action'");
-      const dangerousAction = action?.setting_value || config.security.dangerousCommandAction;
-      if (dangerousAction === 'block') {
-        return res.json({ code: 403, message: '该命令被安全策略拦截，属于危险命令' });
-      }
+      return res.json({ code: 403, message: '该命令被安全策略拦截，属于危险命令' });
     }
     const server = await db.queryOne('SELECT * FROM servers WHERE id = ?', [server_id]);
     if (!server) return res.json({ code: 404, message: '服务器不存在' });
@@ -123,8 +119,9 @@ router.post('/batch-exec', commandLimiter, async (req, res) => {
         return !task || task.status === 'cancelled';
       };
 
-      for (const sid of server_ids) {
-        if (await isCancelled()) break;
+      // 有限并发执行（取消后不再领取新任务，进行中的命令自然跑完）
+      await runWithConcurrency(server_ids, 5, async (sid) => {
+        if (await isCancelled()) return;
 
         const logId = await db.insert('INSERT INTO command_logs (task_id, user_id, server_id, command, execute_type, status) VALUES (?, ?, ?, ?, ?, ?)', [taskId, req.user.id, sid, command, 'batch', 'running']);
         const start = Date.now();
@@ -134,7 +131,7 @@ router.post('/batch-exec', commandLimiter, async (req, res) => {
           if (!server) throw new Error('服务器不存在');
           if (await isCancelled()) {
             await db.update('UPDATE command_logs SET status=?, error_message=?, duration_ms=?, finished_at=NOW() WHERE id=?', ['cancelled', '任务已取消，未执行该服务器', Date.now() - start, logId]);
-            break;
+            return;
           }
           conn = await createSSHConnection(server);
           const result = await execCommand(conn, command);
@@ -148,11 +145,10 @@ router.post('/batch-exec', commandLimiter, async (req, res) => {
           const cancelled = await isCancelled();
           await db.update('UPDATE command_logs SET status=?, error_message=?, duration_ms=?, finished_at=NOW() WHERE id=?', [cancelled ? 'cancelled' : 'failed', cancelled ? '任务已取消' : err.message, duration, logId]);
           if (!cancelled) failed++;
-          if (cancelled) break;
         } finally {
           try { if (conn) conn.end(); } catch {}
         }
-      }
+      });
 
       const current = await db.queryOne('SELECT status FROM batch_tasks WHERE id = ?', [taskId]);
       if (current && current.status !== 'cancelled') {
@@ -187,10 +183,12 @@ router.get('/logs', async (req, res) => {
     if (status) { sql += ' AND cl.status = ?'; params.push(status); }
     if (execute_type) { sql += ' AND cl.execute_type = ?'; params.push(execute_type); }
     if (keyword) { sql += ' AND cl.command LIKE ?'; params.push(`%${keyword}%`); }
+    // COUNT 复用与列表一致的 WHERE（含 execute_type 条件），避免过滤参数与占位符错位
+    const countSql = sql.replace('SELECT cl.*, s.name as server_name, s.host as server_host', 'SELECT COUNT(*) as total');
+    const [{ total }] = await db.query(countSql, [...params]);
     sql += ' ORDER BY cl.id DESC LIMIT ? OFFSET ?';
     params.push(parseInt(pageSize), (parseInt(page) - 1) * parseInt(pageSize));
     const logs = await db.query(sql, params);
-    const [{ total }] = await db.query(`SELECT COUNT(*) as total FROM command_logs cl WHERE 1=1${server_id ? ' AND cl.server_id=?' : ''}${status ? ' AND cl.status=?' : ''}${keyword ? ' AND cl.command LIKE ?' : ''}`, params.slice(0, -2));
     res.json({ code: 0, data: { list: logs, total, page: parseInt(page), pageSize: parseInt(pageSize) } });
   } catch (err) {
     res.json({ code: 500, message: err.message });

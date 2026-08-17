@@ -58,8 +58,7 @@ module.exports = {
   },
   security: {
     allowQueryToken: parseBool(process.env.ALLOW_QUERY_TOKEN, !isProduction),
-    allowPlainCredentialExport: parseBool(process.env.ALLOW_PLAIN_CREDENTIAL_EXPORT, false),
-    dangerousCommandAction: process.env.DANGEROUS_COMMAND_ACTION || (isProduction ? 'block' : 'confirm')
+    allowPlainCredentialExport: parseBool(process.env.ALLOW_PLAIN_CREDENTIAL_EXPORT, false)
   },
   mysql: {
     host: process.env.MYSQL_HOST || 'localhost',

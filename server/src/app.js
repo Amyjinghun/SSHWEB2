@@ -38,7 +38,8 @@ app.use((req, res, next) => {
   }
   next();
 });
-app.use(express.json());
+// 在线编辑读取上限为 5MB，JSON 转义还会膨胀，默认 100kb 会导致大文件保存/批量导入失败
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // 静态文件服务

@@ -5,29 +5,27 @@ const db = require('../db');
 const { authMiddleware, roleMiddleware } = require('../middleware/auth');
 const { createSSHConnection, execCommand, shellQuote } = require('../ssh/connection');
 const { writeAuditLog } = require('../utils/audit');
+const { runWithConcurrency } = require('../utils/async');
 
 const router = express.Router();
 router.use(authMiddleware);
 
-// 在多台服务器上批量执行命令，返回每台的结果
+// 在多台服务器上批量执行命令，返回每台的结果（有限并发，结果顺序与输入一致）
 async function batchExec(serverIds, commandFn, timeout = 30000) {
-  const results = [];
-  for (const sid of serverIds) {
-    const server = await db.queryOne('SELECT id, name, host FROM servers WHERE id = ?', [sid]);
-    if (!server) { results.push({ server_id: sid, server_name: '-', host: '-', success: false, message: '服务器不存在' }); continue; }
+  return runWithConcurrency(serverIds, 5, async (sid) => {
+    const server = await db.queryOne('SELECT * FROM servers WHERE id = ?', [sid]);
+    if (!server) return { server_id: sid, server_name: '-', host: '-', success: false, message: '服务器不存在' };
     let conn;
     try {
-      const full = await db.queryOne('SELECT * FROM servers WHERE id = ?', [sid]);
-      conn = await createSSHConnection(full);
+      conn = await createSSHConnection(server);
       const { out, exitCode, stderr } = await execCommand(conn, commandFn(server), timeout);
-      conn.end(); conn = null;
-      results.push({ server_id: sid, server_name: server.name, host: server.host, success: exitCode === 0, data: out.trim(), stderr: stderr?.trim() || '', exitCode });
+      return { server_id: sid, server_name: server.name, host: server.host, success: exitCode === 0, data: out.trim(), stderr: stderr?.trim() || '', exitCode };
     } catch (err) {
+      return { server_id: sid, server_name: server.name, host: server.host, success: false, message: err.message };
+    } finally {
       try { if (conn) conn.end(); } catch {}
-      results.push({ server_id: sid, server_name: server.name, host: server.host, success: false, message: err.message });
     }
-  }
-  return results;
+  });
 }
 
 // ── 系统信息（概览） ──
@@ -61,7 +59,13 @@ router.post('/ssh-port', async (req, res) => {
       if (!port || port < 1 || port > 65535) return res.json({ code: 400, message: '端口无效' });
       const cmd = () => `sed -i "s/^#\\?Port .*/Port ${Number(port)}/" /etc/ssh/sshd_config && systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null && echo "SSH 端口已改为 ${port}"`;
       const results = await batchExec(server_ids, cmd, 15000);
-      await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'ssh_port_change', detail: { port, servers: server_ids.length } });
+      // 同步更新面板记录的端口，否则下一轮监控/终端仍连旧端口会全部失联
+      const okIds = results.filter(r => r.success && r.server_id).map(r => r.server_id);
+      if (okIds.length) {
+        const placeholders = okIds.map(() => '?').join(',');
+        await db.update(`UPDATE servers SET port = ? WHERE id IN (${placeholders})`, [Number(port), ...okIds]);
+      }
+      await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'ssh_port_change', detail: { port, servers: server_ids.length, portSynced: okIds.length } });
       res.json({ code: 0, data: results });
     }
   } catch (err) { res.json({ code: 500, message: err.message }); }
@@ -115,7 +119,8 @@ router.post('/swap', async (req, res) => {
       res.json({ code: 0, data: results });
     } else if (action === 'create') {
       const swapSize = Number(size) || 1024;
-      const cmd = () => `fallocate -l ${swapSize}M /swapfile 2>/dev/null && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab && echo "Swap ${swapSize}MB 已创建"`;
+      // && 串联：任何一步失败即终止且退出码非零，避免创建失败仍写 fstab/报成功
+      const cmd = () => `fallocate -l ${swapSize}M /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && { grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab; } && echo "Swap ${swapSize}MB 已创建"`;
       const results = await batchExec(server_ids, cmd, 30000);
       await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'swap_create', detail: { size: swapSize, servers: server_ids.length } });
       res.json({ code: 0, data: results });
@@ -181,8 +186,9 @@ router.post('/benchmark', async (req, res) => {
     if (!server_ids?.length) return res.json({ code: 400, message: '请选择服务器' });
     const cmd = () => `echo "=== CPU 性能 ===" && dd if=/dev/zero bs=1M count=1024 2>&1 | tail -1
 echo "=== 内存 ===" && free -h | grep Mem
-echo "=== 磁盘写入 ===" && dd if=/dev/zero of=/tmp/testfile bs=1M count=512 oflag=direct 2>&1 | tail -1 && rm -f /tmp/testfile
-echo "=== 磁盘读取 ===" && dd if=/tmp/testfile of=/dev/null bs=1M 2>/dev/null; rm -f /tmp/testfile 2>/dev/null
+echo "=== 磁盘写入 ===" && dd if=/dev/zero of=/tmp/testfile bs=1M count=512 oflag=direct 2>&1 | tail -1
+echo "=== 磁盘读取 ===" && dd if=/tmp/testfile of=/dev/null bs=1M 2>&1 | tail -1
+rm -f /tmp/testfile 2>/dev/null
 echo "=== 网络延迟 ===" && ping -c 3 8.8.8.8 2>&1 | tail -1 || echo "ping 不可用"`;
     const results = await batchExec(server_ids, cmd, 120000);
     res.json({ code: 0, data: results });

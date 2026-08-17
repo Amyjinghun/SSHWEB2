@@ -30,6 +30,20 @@ function pct(v) {
   return Math.min(100, Math.round(n * 10) / 10);
 }
 
+// 登录页展示信息：仅暴露系统名称/登录标题两个非敏感键，无需登录即可访问
+router.get('/site-info', publicLimiter, async (req, res) => {
+  try {
+    const rows = await db.query(
+      "SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('system_name', 'login_title')"
+    );
+    const data = { system_name: 'SSHWeb', login_title: 'Linux 服务器群控 WebSSH 运维管理系统' };
+    rows.forEach(row => { if (row.setting_value) data[row.setting_key] = row.setting_value; });
+    res.json({ code: 0, data });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 router.get('/monitor/:shareKey', publicLimiter, async (req, res) => {
   try {
     const settings = await getPublicMonitorSettings();

@@ -346,7 +346,6 @@ ENCRYPTION_KEY=${ENCRYPTION_KEY}
 
 SSH_CONNECT_TIMEOUT=10000
 SSH_EXEC_TIMEOUT=60000
-ENABLE_DANGEROUS_COMMAND_BLOCK=true
 EOF
 
   cp "${INSTALL_DIR}/.env" "${INSTALL_DIR}/server/.env"
@@ -893,7 +892,6 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - SSH_CONNECT_TIMEOUT=10000
       - SSH_EXEC_TIMEOUT=60000
-      - ENABLE_DANGEROUS_COMMAND_BLOCK=true
     networks:
       - sshweb-net
     volumes:
@@ -929,7 +927,6 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - SSH_CONNECT_TIMEOUT=10000
       - SSH_EXEC_TIMEOUT=60000
-      - ENABLE_DANGEROUS_COMMAND_BLOCK=true
     depends_on:
       db:
         condition: service_healthy

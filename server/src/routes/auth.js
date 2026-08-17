@@ -12,8 +12,42 @@ const router = express.Router();
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
+  // 成功登录不计数，正常用户不会被自己的成功登录耗尽额度
+  skipSuccessfulRequests: true,
   message: { code: 429, message: '登录尝试过于频繁，请15分钟后再试' }
 });
+
+// 按用户名的失败锁定：连续失败 5 次锁定 10 分钟（内存计数，面板重启即清零）
+const LOGIN_FAIL_LIMIT = 5;
+const LOGIN_LOCK_MS = 10 * 60 * 1000;
+const loginFailures = new Map(); // username -> { count, lockedUntil }
+
+function getLoginLock(username) {
+  const rec = loginFailures.get(username);
+  if (!rec) return null;
+  if (rec.lockedUntil && rec.lockedUntil <= Date.now()) {
+    loginFailures.delete(username);
+    return null;
+  }
+  return rec;
+}
+
+function recordLoginFailure(username) {
+  const rec = loginFailures.get(username) || { count: 0, lockedUntil: 0 };
+  rec.count += 1;
+  if (rec.count >= LOGIN_FAIL_LIMIT) {
+    rec.lockedUntil = Date.now() + LOGIN_LOCK_MS;
+    rec.count = 0;
+  }
+  loginFailures.set(username, rec);
+  // 防止 Map 无限增长：超量时清理已过期的记录
+  if (loginFailures.size > 500) {
+    const now = Date.now();
+    for (const [key, value] of loginFailures) {
+      if (value.lockedUntil && value.lockedUntil <= now) loginFailures.delete(key);
+    }
+  }
+}
 
 const passwordLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -27,16 +61,24 @@ router.post('/login', loginLimiter, async (req, res) => {
     if (!username || !password) {
       return res.json({ code: 400, message: '请输入用户名和密码' });
     }
+    const lock = getLoginLock(username);
+    if (lock) {
+      const minutes = Math.max(1, Math.ceil((lock.lockedUntil - Date.now()) / 60000));
+      return res.json({ code: 429, message: `密码错误次数过多，该账号已锁定，请约 ${minutes} 分钟后再试` });
+    }
     const user = await db.queryOne('SELECT * FROM users WHERE username = ? AND status = 1', [username]);
     if (!user) {
+      recordLoginFailure(username);
       await writeAuditLog({ username, action: 'login', ip: req.ip, userAgent: req.get('User-Agent'), status: 'failed', errorMessage: '用户不存在或已禁用' });
       return res.json({ code: 401, message: '用户名或密码错误' });
     }
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
+      recordLoginFailure(username);
       await writeAuditLog({ userId: user.id, username, action: 'login', ip: req.ip, userAgent: req.get('User-Agent'), status: 'failed', errorMessage: '密码错误' });
       return res.json({ code: 401, message: '用户名或密码错误' });
     }
+    loginFailures.delete(username);
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role, tokenVersion: user.token_version || 0 }, config.jwtSecret, { expiresIn: config.jwtExpiresIn });
     await db.query('UPDATE users SET last_login_at = NOW() WHERE id = ?', [user.id]);
     await writeAuditLog({ userId: user.id, username, action: 'login', ip: req.ip, userAgent: req.get('User-Agent') });

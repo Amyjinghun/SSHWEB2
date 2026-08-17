@@ -5,6 +5,7 @@ const db = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { createSSHConnection } = require('../ssh/connection');
 const { writeAuditLog } = require('../utils/audit');
+const { runWithConcurrency } = require('../utils/async');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -52,6 +53,12 @@ function sftpStat(sftp, remotePath) {
   });
 }
 
+function sftpLstat(sftp, remotePath) {
+  return new Promise((resolve, reject) => {
+    sftp.lstat(remotePath, (err, stat) => err ? reject(err) : resolve(stat));
+  });
+}
+
 function sftpReaddir(sftp, remotePath) {
   return new Promise((resolve, reject) => {
     sftp.readdir(remotePath, (err, list) => err ? reject(err) : resolve(list));
@@ -96,7 +103,8 @@ function sftpRmdir(sftp, remotePath) {
 
 
 async function removeRemoteRecursive(sftp, remotePath) {
-  const stat = await sftpStat(sftp, remotePath);
+  // 用 lstat 不跟随符号链接：软链（含指向父目录的）按文件删除，否则会无限递归
+  const stat = await sftpLstat(sftp, remotePath);
   if (!stat.isDirectory()) {
     await sftpUnlink(sftp, remotePath);
     return;
@@ -248,9 +256,8 @@ router.post('/distribute', async (req, res) => {
     const remotePath = normalizeRemotePath(target_path);
     const placeholders = target_servers.map(() => '?').join(',');
     const servers = await db.query(`SELECT * FROM servers WHERE id IN (${placeholders})`, target_servers.map(Number));
-    const results = [];
-
-    for (const server of servers) {
+    // 有限并发分发，避免大批量时逐台串行过慢
+    const results = await runWithConcurrency(servers, 5, async (server) => {
       try {
         await withSftp(server.id, async ({ sftp }) => {
           await new Promise((resolve, reject) => {
@@ -261,11 +268,11 @@ router.post('/distribute', async (req, res) => {
           });
         });
         await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'distribute_file', serverId: server.id, detail: { source_server_id, source_path, target_path: remotePath, size: sourceBuffer.length } });
-        results.push({ server_id: server.id, server_name: server.name, host: server.host, success: true, message: '分发成功' });
+        return { server_id: server.id, server_name: server.name, host: server.host, success: true, message: '分发成功' };
       } catch (err) {
-        results.push({ server_id: server.id, server_name: server.name, host: server.host, success: false, message: err.message });
+        return { server_id: server.id, server_name: server.name, host: server.host, success: false, message: err.message };
       }
-    }
+    });
 
     const success = results.filter(r => r.success).length;
     res.json({ code: 0, message: `文件分发完成，成功 ${success} 台，失败 ${results.length - success} 台`, data: { total: results.length, success, failed: results.length - success, results } });
@@ -299,8 +306,8 @@ router.post('/batch-upload', upload.single('file'), async (req, res) => {
     if (!servers.length) return res.json({ code: 400, message: '未找到目标服务器' });
 
     const remotePath = normalizeRemotePath(path);
-    const results = [];
-    for (const server of servers) {
+    // 有限并发上传，避免大批量时逐台串行过慢
+    const results = await runWithConcurrency(servers, 5, async (server) => {
       try {
         await withSftp(server.id, async ({ sftp }) => {
           await new Promise((resolve, reject) => {
@@ -311,11 +318,11 @@ router.post('/batch-upload', upload.single('file'), async (req, res) => {
           });
         });
         await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'batch_upload_file', serverId: server.id, detail: { path: remotePath, size: req.file.size } });
-        results.push({ server_id: server.id, server_name: server.name, host: server.host, success: true, message: '上传成功' });
+        return { server_id: server.id, server_name: server.name, host: server.host, success: true, message: '上传成功' };
       } catch (err) {
-        results.push({ server_id: server.id, server_name: server.name, host: server.host, success: false, message: err.code === 3 ? '权限不足，当前 SSH 用户无法上传到该路径' : err.message });
+        return { server_id: server.id, server_name: server.name, host: server.host, success: false, message: err.code === 3 ? '权限不足，当前 SSH 用户无法上传到该路径' : err.message };
       }
-    }
+    });
     const success = results.filter(r => r.success).length;
     res.json({ code: 0, message: '批量上传完成', data: { total: results.length, success, failed: results.length - success, results } });
   } catch (err) {

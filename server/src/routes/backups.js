@@ -125,7 +125,7 @@ router.post('/db/configs/:id/run', async (req, res) => {
     if (config.server_id) {
       const server = await db.queryOne('SELECT * FROM servers WHERE id=?', [config.server_id]);
       const conn = await createSSHConnection(server);
-      const { out, exitCode } = await execCommand(conn, dumpCmd);
+      const { out, exitCode } = await execCommand(conn, dumpCmd, 10 * 60 * 1000);
       conn.end();
       if (exitCode !== 0) return res.json({ code: 500, message: '备份失败: ' + out });
       const fileSize = parseInt(out.trim());
@@ -218,7 +218,7 @@ router.post('/config/tasks/:id/run', async (req, res) => {
     if (!Array.isArray(backupPaths) || backupPaths.length === 0) return res.json({ code: 400, message: '备份路径为空' });
     const paths = backupPaths.map(p => shellQuote(String(p))).join(' ');
     const cmd = `mkdir -p ${shellQuote(task.backup_dir || '/tmp/config-backups')} && tar czf ${shellQuote(filePath)} ${paths} 2>&1 && stat -c %s ${shellQuote(filePath)}`;
-    const { exitCode, out } = await execCommand(conn, cmd);
+    const { exitCode, out } = await execCommand(conn, cmd, 10 * 60 * 1000);
     conn.end();
     if (exitCode !== 0) return res.json({ code: 500, message: '备份失败: ' + out });
     await db.insert('INSERT INTO backup_files (config_id, server_id, backup_type, file_name, file_path, file_size, status) VALUES (?,?,?,?,?,?,?)', [task.task_id, task.server_id, 'config', fileName, filePath, parseInt(out.trim()) || 0, 'success']);

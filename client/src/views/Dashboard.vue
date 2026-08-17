@@ -150,7 +150,13 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { io } from 'socket.io-client'
 import api from '../api'
-import * as echarts from 'echarts'
+import * as echarts from 'echarts/core'
+import { BarChart, PieChart } from 'echarts/charts'
+import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+
+// 按需注册，整包引入会让首屏多出几百 kB
+echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
 const router = useRouter()
 
@@ -326,11 +332,18 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   disconnectMonitor()
+  window.removeEventListener('resize', handleChartResize)
+  pieChart?.dispose(); pieChart = null
+  barChart?.dispose(); barChart = null
 })
 
+let pieChart = null
+let barChart = null
+function handleChartResize() { pieChart?.resize(); barChart?.resize() }
+
 function renderPieChart(data) {
-  const chart = echarts.init(pieChartRef.value)
-  chart.setOption({
+  pieChart = echarts.init(pieChartRef.value)
+  pieChart.setOption({
     tooltip: { trigger: 'item', backgroundColor: '#fff', borderColor: '#e8ecf4', borderWidth: 1, textStyle: { color: '#1e293b' } },
     legend: { bottom: 0, textStyle: { color: '#64748b' } },
     series: [{
@@ -344,12 +357,11 @@ function renderPieChart(data) {
       ]
     }]
   })
-  window.addEventListener('resize', () => chart.resize())
 }
 
 function renderBarChart(stats) {
-  const chart = echarts.init(barChartRef.value)
-  chart.setOption({
+  barChart = echarts.init(barChartRef.value)
+  barChart.setOption({
     tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e8ecf4', borderWidth: 1, textStyle: { color: '#1e293b' } },
     legend: { data: ['成功', '失败'], textStyle: { color: '#64748b' } },
     grid: { left: 40, right: 20, bottom: 40, top: 30 },
@@ -360,7 +372,7 @@ function renderBarChart(stats) {
       { name: '失败', type: 'bar', stack: 'total', data: stats.map(s => s.failed_count), itemStyle: { color: '#ef4444', borderRadius: [4, 4, 0, 0] } }
     ]
   })
-  window.addEventListener('resize', () => chart.resize())
+  window.addEventListener('resize', handleChartResize)
 }
 </script>
 

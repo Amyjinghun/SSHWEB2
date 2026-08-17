@@ -1,5 +1,6 @@
 const express = require('express');
 const net = require('net');
+const config = require('../config');
 const db = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { createSSHConnection, execCommand } = require('../ssh/connection');
@@ -394,6 +395,10 @@ router.get('/export', async (req, res) => {
   try {
     const format = String(req.query.format || 'csv').toLowerCase() === 'json' ? 'json' : 'csv';
     const includeCredentials = ['1', 'true', 'yes'].includes(String(req.query.include_credentials || '').toLowerCase());
+    // 明文凭据导出必须显式开启 ALLOW_PLAIN_CREDENTIAL_EXPORT（默认关闭）
+    if (includeCredentials && !config.security.allowPlainCredentialExport) {
+      return res.status(403).json({ code: 403, message: '未开启 ALLOW_PLAIN_CREDENTIAL_EXPORT，禁止导出明文凭据' });
+    }
     const { where, params } = buildExportWhere(req.query);
     const rows = await db.query(
       `SELECT s.*, DATE_FORMAT(s.expires_at, '%Y-%m-%d') as expires_at, DATE_FORMAT(s.last_connected_at, '%Y-%m-%d %H:%i:%s') as last_connected_at, g.name as group_name
@@ -432,11 +437,11 @@ router.get('/:id', async (req, res) => {
   try {
     const server = await db.queryOne("SELECT s.*, DATE_FORMAT(s.expires_at, '%Y-%m-%d') as expires_at, g.name as group_name FROM servers s LEFT JOIN server_groups g ON s.group_id = g.id WHERE s.id = ?", [req.params.id]);
     if (!server) return res.json({ code: 404, message: '服务器不存在' });
-    const includeCredentials = ['1', 'true', 'yes'].includes(String(req.query.include_credentials || '').toLowerCase());
+    // 明文回显凭据需显式开启 ALLOW_PLAIN_CREDENTIAL_EXPORT（默认关闭，避免凭据随接口外泄）
+    const includeCredentials = config.security.allowPlainCredentialExport && ['1', 'true', 'yes'].includes(String(req.query.include_credentials || '').toLowerCase());
     server.has_password = !!server.password_encrypted;
     server.has_private_key = !!server.private_key_encrypted;
     server.tags = parseTagsField(server.tags);
-    // 明文回显凭据需显式开启 ALLOW_PLAIN_CREDENTIAL_EXPORT（默认关闭，避免凭据随接口外泄）
     if (includeCredentials) {
       server.password = safeDecrypt(server.password_encrypted);
       server.private_key = safeDecrypt(server.private_key_encrypted);
