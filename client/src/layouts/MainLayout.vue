@@ -206,8 +206,8 @@ async function changePassword() {
   if (res.code === 0) {
     ElMessage.success('密码已修改，请重新登录')
     showPasswordDialog.value = false
-    // 改密后旧 token 全部失效（token_version+1），直接回登录页
-    api.post('/api/auth/logout').catch(() => {})
+    // 改密后旧 token 已在服务端失效（token_version+1），无需再调 logout
+    // （那个请求必然 401，只会弹一条"登录已过期"的错误提示），直接回登录页
     userStore.logout()
     router.push('/login')
   } else ElMessage.error(res.message)
