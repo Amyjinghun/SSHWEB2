@@ -56,7 +56,26 @@
       "Bash(node --check src/routes/servers.js)",
       "Bash(node --check \"e:/SSHWEB2/server/src/routes/servers.js\")",
       "Bash(node --check \"e:/SSHWEB2/server/src/utils/ssh-diag-log.js\")",
-      "Bash(node --check \"e:/SSHWEB2/server/src/ssh/connection.js\")"
+      "Bash(node --check \"e:/SSHWEB2/server/src/ssh/connection.js\")",
+      "Bash(node --check src/services/rule-engine.js)",
+      "Bash(node --check src/services/telegram.js)",
+      "Bash(node --check src/scheduler/index.js)",
+      "Bash(node --check src/config/index.js)",
+      "Bash(node --check src/db/index.js)",
+      "Bash(node --check src/websocket/monitor-grid.js)",
+      "Bash(node --check src/routes/public.js)",
+      "Bash(node --check src/routes/settings.js)",
+      "Bash(bash -n /e/SSHWEB2/setup.sh)",
+      "Bash(node --check src/routes/backups.js)",
+      "Bash(bash -n /e/SSHWEB2/fix-docker-db.sh)",
+      "Bash(git commit -m 'feat: 规则引擎agent、监控卡片扩展、数据库导出导入、安装脚本完善 *)",
+      "Bash(node --check src/routes/docker.js)",
+      "Bash(node --check src/routes/local-files.js)",
+      "Bash(node --check src/app.js)",
+      "Bash(node --check src/routes/system-manage.js)",
+      "Bash(git reset *)",
+      "Bash(git commit -m 'feat: UI全面改造+Docker管理+系统维护+终端改版+文件分发+本机文件 *)",
+      "Bash(git commit -m 'feat: 实时网络速率+累计流量双显示 *)"
     ]
   }
 }
