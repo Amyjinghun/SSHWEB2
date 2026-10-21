@@ -54,6 +54,15 @@ async function ensureSchema() {
   await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN static_info_updated_at DATETIME NULL AFTER system_info');
   await ignoreDuplicateColumn('ALTER TABLE server_metrics ADD COLUMN network_rx_bytes BIGINT NULL AFTER disk_usage');
   await ignoreDuplicateColumn('ALTER TABLE server_metrics ADD COLUMN network_tx_bytes BIGINT NULL AFTER network_rx_bytes');
+  // Host key TOFU：首次终端连接记录服务器指纹，之后校验防中间人（重置接口在 servers 路由）
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN host_key_fingerprint VARCHAR(128) NULL AFTER static_info_updated_at');
+  // 监控 Agent：常驻 agent 主动上报（token 只存哈希，明文仅在安装时展示）
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN agent_token_hash CHAR(64) NULL AFTER host_key_fingerprint');
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN agent_last_report_at DATETIME NULL AFTER agent_token_hash');
+  await ignoreDuplicateColumn('ALTER TABLE servers ADD COLUMN agent_version VARCHAR(20) NULL AFTER agent_last_report_at');
+  await ignoreDuplicateIndex('CREATE INDEX idx_agent_token_hash ON servers (agent_token_hash)');
+  await ignoreDuplicateColumn('ALTER TABLE server_metrics ADD COLUMN net_rx_rate INT NULL AFTER network_tx_bytes');
+  await ignoreDuplicateColumn('ALTER TABLE server_metrics ADD COLUMN net_tx_rate INT NULL AFTER net_rx_rate');
   // 规则引擎 agent：alert_rules 绑定命令模板动作，alert_logs 记录动作结果与 LLM 诊断
   await ignoreDuplicateColumn('ALTER TABLE alert_rules ADD COLUMN action_ids JSON NULL COMMENT "命令模板 ID 数组，命中时在目标服务器执行" AFTER notify_channels');
   await ignoreDuplicateColumn('ALTER TABLE alert_logs ADD COLUMN action_results TEXT NULL COMMENT "动作执行结果 JSON" AFTER notify_result');

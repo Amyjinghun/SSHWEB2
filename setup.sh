@@ -960,6 +960,7 @@ services:
       - sshweb-net
     volumes:
       - sshweb-logs:/var/log/sshweb
+      - sshweb-termlogs:/app/server/data
 
 networks:
   sshweb-net:
@@ -967,6 +968,7 @@ networks:
 
 volumes:
   sshweb-logs:
+  sshweb-termlogs:
 EOF
   else
     # 内置数据库：不能直接挂原版 schema/seed，其中的 USE `sshweb` 会把表建到
@@ -1002,6 +1004,7 @@ services:
       - sshweb-net
     volumes:
       - sshweb-logs:/var/log/sshweb
+      - sshweb-termlogs:/app/server/data
 
   db:
     image: mariadb:11
@@ -1033,6 +1036,7 @@ networks:
 volumes:
   sshweb-db-data:
   sshweb-logs:
+  sshweb-termlogs:
 EOF
   fi
 

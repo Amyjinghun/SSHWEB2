@@ -28,6 +28,7 @@ services:
       - sshweb-net
     volumes:
       - sshweb-logs:/var/log/sshweb
+      - sshweb-termlogs:/app/server/data
 
   db:
     image: mariadb:11
@@ -59,3 +60,4 @@ networks:
 volumes:
   sshweb-db-data:
   sshweb-logs:
+  sshweb-termlogs:

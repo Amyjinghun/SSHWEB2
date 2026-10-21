@@ -3,6 +3,7 @@ const config = require('../config');
 const { normalizeSSHConfig, formatSSHError } = require('../ssh/connection');
 const { collectServerMetrics } = require('../scheduler');
 const { createSSHConnection } = require('../ssh/connection');
+const { agentEvents, isAgentFreshAsync, getAgentInterval } = require('../services/agent');
 const db = require('../db');
 
 function setupRealtimeMetrics(io) {
@@ -29,8 +30,22 @@ function setupRealtimeMetrics(io) {
     let conn = null;
     let timer = null;
     let lastNet = null;
+    // agent 订阅模式：不开 SSH，直接转发 agent 推送
+    let agentMode = false;
+    let agentHandler = null;
+    let agentWatchdog = null;
+
+    function clearAgentMode() {
+      agentMode = false;
+      if (agentHandler) {
+        try { agentEvents.off('metrics', agentHandler); } catch {}
+        agentHandler = null;
+      }
+      if (agentWatchdog) { clearInterval(agentWatchdog); agentWatchdog = null; }
+    }
 
     async function closeAll() {
+      clearAgentMode();
       if (timer) { clearInterval(timer); timer = null; }
       try { if (conn) conn.end(); } catch {}
       conn = null;
@@ -45,10 +60,27 @@ function setupRealtimeMetrics(io) {
         const server = await db.queryOne('SELECT * FROM servers WHERE id = ?', [serverId]);
         if (!server) return socket.emit('error', '服务器不存在');
 
+        // Agent 在线 → 订阅模式：转发 agent 上报，超过 3 个周期没推送才提示中断
+        if (await isAgentFreshAsync(server)) {
+          agentMode = true;
+          socket.emit('connected', { via: 'agent' });
+          let lastPush = Date.now();
+          agentHandler = (payload) => { lastPush = Date.now(); socket.emit('metrics', payload); };
+          agentEvents.on(`metrics:${serverId}`, agentHandler);
+          const staleMs = Math.max((await getAgentInterval()) * 3 * 1000, 30000);
+          agentWatchdog = setInterval(() => {
+            if (Date.now() - lastPush > staleMs) {
+              socket.emit('error', 'Agent 推送中断，请重新打开实时监控');
+              closeAll();
+            }
+          }, 5000);
+          return;
+        }
+
         const connectConfig = normalizeSSHConfig(server);
         conn = await createSSHConnection(server);
 
-        socket.emit('connected');
+        socket.emit('connected', { via: 'ssh' });
 
         const collect = async () => {
           try {

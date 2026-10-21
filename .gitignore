@@ -10,3 +10,6 @@ server/sshweb/
 server/server/
 server/client/
 sshport.sh
+
+# ZCode 会话目录
+.zcode/

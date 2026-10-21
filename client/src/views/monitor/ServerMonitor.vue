@@ -77,6 +77,7 @@
             <div class="mc-title-row">
               <strong :title="server.name">{{ server.name }}</strong>
               <span v-if="server.group_name" class="mc-tag">{{ server.group_name }}</span>
+              <span v-if="agentLive(server)" class="mc-tag agent-live" title="Agent 常驻上报，秒级实时">Agent</span>
               <span class="mc-status" :class="server.status"><i></i>{{ statusText(server.status) }}</span>
             </div>
             <div class="mc-host">{{ server.host }}<span v-if="server.os_info"> · {{ server.os_info }}</span></div>
@@ -272,6 +273,12 @@ function statusText(status) {
   return '未知'
 }
 
+// Agent 90 秒内有上报视为实时在线（snapshot 每 5s 刷新，天然跟随）
+function agentLive(server) {
+  if (!server.agent_last_report_at) return false
+  return (Date.now() - new Date(server.agent_last_report_at).getTime()) < 90000
+}
+
 function mb(value) {
   const n = num(value)
   if (n <= 0) return '-'
@@ -399,6 +406,7 @@ function expiryDisplay(expiresAt) {
   background: var(--primary-bg); color: var(--primary-color);
   border-radius: 999px; font-size: 10px; font-weight: 700;
 }
+.mc-tag.agent-live { background: rgba(22, 163, 74, 0.15); color: #16a34a; }
 .mc-status {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700;

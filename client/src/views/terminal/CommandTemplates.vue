@@ -22,8 +22,9 @@
         <el-table-column prop="is_dangerous" label="危险" width="60">
           <template #default="{ row }"><el-tag v-if="row.is_dangerous" type="danger" size="small" effect="dark">是</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column label="操作" width="220">
           <template #default="{ row }">
+            <el-button size="small" type="primary" @click="sendToTerminal(row)">发送到终端</el-button>
             <el-button size="small" @click="showDialog(row)">编辑</el-button>
             <el-button size="small" type="danger" @click="del(row)">删除</el-button>
           </template>
@@ -44,8 +45,10 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '../../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+const router = useRouter()
 const templates = ref([])
 const categoryFilter = ref('')
 const dialogVisible = ref(false)
@@ -63,6 +66,10 @@ async function save() {
   if (res.code === 0) { ElMessage.success('保存成功'); dialogVisible.value = false; loadData() }
 }
 async function del(row) { await ElMessageBox.confirm('确定删除？', '确认'); const r = await api.delete(`/api/commands/templates/${row.id}`); if (r.code === 0) { ElMessage.success('已删除'); loadData() } }
+// 发送到终端：命令只填入输入框，由人工确认执行
+function sendToTerminal(row) {
+  router.push({ path: '/terminal', query: { cmd: row.command } })
+}
 </script>
 
 <style scoped>

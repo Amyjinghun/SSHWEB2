@@ -1,6 +1,7 @@
 import { useSettingsStore } from '../stores/settings'
 
-// 终端外观与「系统设置」联动：WebSSH 与日志查看共用同一套主题/字号
+// 终端外观与「系统设置」联动：WebSSH 与日志查看共用同一套主题/字号。
+// 系统设置为全局默认，用户可在终端工具栏覆盖为自己的偏好（localStorage）。
 export const TERMINAL_THEMES = {
   dark: {
     background: '#0b1214', foreground: '#d8dddc', cursor: '#0891b2', cursorAccent: '#0b1214',
@@ -24,16 +25,40 @@ export function terminalTheme(name) {
   return TERMINAL_THEMES[name] || TERMINAL_THEMES.dark
 }
 
-// 读取设置失败时回落默认值（13 号/暗色，即改造前的写死值），不阻塞终端打开
-export async function getTerminalPrefs() {
+const USER_PREFS_KEY = 'term_user_prefs'
+
+// 用户级覆盖项（localStorage），与系统设置键同名便于合并
+export function loadUserPrefs() {
   try {
-    const s = (await useSettingsStore().load()) || {}
-    const fontSize = Number(s.terminal_font_size)
-    return {
-      fontSize: Number.isFinite(fontSize) && fontSize >= 10 && fontSize <= 24 ? fontSize : 13,
-      theme: s.terminal_theme === 'light' ? 'light' : 'dark'
-    }
+    const raw = JSON.parse(localStorage.getItem(USER_PREFS_KEY))
+    return raw && typeof raw === 'object' ? raw : {}
   } catch {
-    return { fontSize: 13, theme: 'dark' }
+    return {}
+  }
+}
+
+export function saveUserPrefs(patch) {
+  const next = { ...loadUserPrefs(), ...patch }
+  try { localStorage.setItem(USER_PREFS_KEY, JSON.stringify(next)) } catch {}
+  return next
+}
+
+function clampFontSize(v, fallback) {
+  const n = Number(v)
+  return Number.isFinite(n) && n >= 10 && n <= 24 ? n : fallback
+}
+
+// 系统设置为底、用户覆盖在上；读取失败回落默认值（13 号/暗色），不阻塞终端打开
+export async function getTerminalPrefs() {
+  let system = {}
+  try {
+    system = (await useSettingsStore().load()) || {}
+  } catch {}
+  const user = loadUserPrefs()
+  return {
+    fontSize: clampFontSize(user.fontSize ?? system.terminal_font_size, 13),
+    theme: user.theme === 'light' ? 'light' : user.theme === 'dark' ? 'dark' : (system.terminal_theme === 'light' ? 'light' : 'dark'),
+    localHistory: user.localHistory !== false,
+    fontFamily: typeof user.fontFamily === 'string' ? user.fontFamily : ''
   }
 }

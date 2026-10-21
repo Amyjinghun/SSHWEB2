@@ -33,6 +33,7 @@ function setupMonitorGrid(io) {
               s.os_info, s.uptime, s.load_avg, s.mem_total_mb, s.mem_used_mb, s.disk_total_mb, s.disk_used_mb,
               s.network_rx_bytes, s.network_tx_bytes,
               s.tcp_connections, s.udp_connections, s.system_info, s.expires_at,
+              s.agent_last_report_at, s.agent_version,
               s.last_connected_at, s.group_id, g.name AS group_name
        FROM servers s
        LEFT JOIN server_groups g ON s.group_id = g.id

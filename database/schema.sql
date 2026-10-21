@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS `servers` (
   `udp_connections` INT NULL COMMENT 'UDP 连接数（inuse）',
   `system_info` JSON NULL COMMENT '静态系统信息（内核/架构/CPU/DNS/拥塞算法/公网IP/位置/运营商）',
   `static_info_updated_at` DATETIME NULL COMMENT '静态信息最后采集时间',
+  `host_key_fingerprint` VARCHAR(128) NULL COMMENT 'Host key SHA-256 指纹（TOFU 首连记录，防中间人）',
+  `agent_token_hash` CHAR(64) NULL COMMENT 'Agent 上报令牌的 SHA-256（明文只在安装时展示一次）',
+  `agent_last_report_at` DATETIME NULL COMMENT 'Agent 最近一次上报时间',
+  `agent_version` VARCHAR(20) NULL COMMENT 'Agent 版本',
   `last_connected_at` DATETIME NULL,
   `expires_at` DATE NULL COMMENT 'Server expiry date',
   `remark` TEXT NULL,
@@ -52,6 +56,7 @@ CREATE TABLE IF NOT EXISTS `servers` (
   INDEX `idx_group_id` (`group_id`),
   INDEX `idx_status` (`status`),
   INDEX `idx_expires_at` (`expires_at`),
+  INDEX `idx_agent_token_hash` (`agent_token_hash`),
   CONSTRAINT `fk_servers_group` FOREIGN KEY (`group_id`) REFERENCES `server_groups`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -118,6 +123,8 @@ CREATE TABLE IF NOT EXISTS `server_metrics` (
   `disk_usage` DECIMAL(5,2) NULL,
   `network_rx_bytes` BIGINT NULL,
   `network_tx_bytes` BIGINT NULL,
+  `net_rx_rate` INT NULL COMMENT '网络下载速率 B/s（agent 上报）',
+  `net_tx_rate` INT NULL COMMENT '网络上传速率 B/s（agent 上报）',
   `load_avg` VARCHAR(100) NULL,
   `uptime` VARCHAR(100) NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

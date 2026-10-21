@@ -47,7 +47,17 @@ const DEFAULT_SETTINGS = {
   public_monitor_key: '',
   cleanup_audit_days: '90',
   cleanup_command_log_days: '90',
-  cleanup_alert_days: '90'
+  cleanup_alert_days: '90',
+  ai_enabled: 'false',
+  ai_provider: 'openai',
+  ai_base_url: '',
+  ai_api_key: '',
+  ai_model: '',
+  ai_max_tokens: '1024',
+  term_record_enabled: 'false',
+  term_record_retention_days: '30',
+  agent_interval: '5',
+  agent_panel_url: ''
 };
 
 const ALLOWED_SETTING_KEYS = new Set(Object.keys(DEFAULT_SETTINGS));

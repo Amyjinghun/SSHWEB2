@@ -13,12 +13,19 @@
 
 ### WebSSH 终端
 - 浏览器直接连接服务器 SSH，支持多终端标签页
-- 终端主题和字体大小可配置
+- 终端主题和字体大小可配置，支持用户级偏好覆盖与 WebGL 渲染加速
+- 本地命令历史（↑/↓ 翻阅）+ 智能补全（历史/模板/命令大全模糊匹配，Tab 采纳）
 - 快速执行命令，批量命令并发执行
-- 命令模板库（100+ 常用命令），执行历史记录
+- 命令模板库（100+ 常用命令），执行历史记录；模板可收藏为快速命令栏、一键发送到终端
+- 命令大全：600+ Linux 命令中文手册（源自开源项目 linux-command），终端内侧栏即查即插
+- AI 终端助手：支持 OpenAI 兼容接口与 Anthropic Claude，解释命令/分析报错/生成命令（流式输出）
+- 会话录制与回放：终端输出录制为 asciicast 格式，倍速回放（只录输出，不录输入，密码不落盘）
+- ZMODEM 文件传输：拖文件到终端即 rz 上传，sz 直接弹出下载，GBK 服务器自动适配
+- 右键菜单（复制/粘贴/搜索/清屏/AI 入口）、终端内搜索、全屏
 
 ### 实时监控
-- 服务器 CPU、内存、磁盘实时采集（默认每 120 秒）
+- **Agent 常驻实时监控**（推荐）：一键 SSH 部署零依赖 shell agent，默认每 5 秒主动推送指标，面板零 SSH 开销；Token 哈希存储、可动态下发采集间隔、失联自动回落 SSH 采集
+- 服务器 CPU、内存、磁盘实时采集（SSH 兜底模式默认每 120 秒）
 - WebSocket 实时数据推送，动态曲线展示
 - 历史趋势图表（1小时/6小时/24小时/7天）
 - 监控明细表格，支持时间范围筛选
@@ -146,6 +153,9 @@ npm run build
 | `MYSQL_DATABASE` | 数据库名 | sshweb |
 | `MYSQL_USER` | 数据库用户 | sshweb |
 | `MYSQL_PASSWORD` | 数据库密码 | sshweb123456 |
+| `SSH_CONNECT_TIMEOUT` | SSH 连接超时（毫秒） | 10000 |
+| `SSH_MAX_SESSIONS_PER_USER` | 每用户并发终端会话上限 | 20 |
+| `SSH_MAX_DATA_FRAME` | 终端单条输入帧大小上限（字节） | 1048576 |
 | `TG_ENABLED` | 启用 Telegram 通知 | false |
 | `TG_BOT_TOKEN` | Telegram Bot Token | - |
 | `TG_CHAT_ID` | Telegram Chat ID | - |

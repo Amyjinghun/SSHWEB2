@@ -569,6 +569,19 @@ router.post('/:id/renew', async (req, res) => {
   }
 });
 
+// 重置 Host key 指纹：服务器重装/更换后，指纹变化会被 TOFU 校验拦截，
+// 确认无误后重置，下次终端连接会重新记录
+router.post('/:id/reset-host-key', async (req, res) => {
+  try {
+    const affected = await db.update('UPDATE servers SET host_key_fingerprint = NULL WHERE id = ?', [req.params.id]);
+    if (!affected) return res.json({ code: 404, message: '服务器不存在' });
+    await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'reset_host_key', targetType: 'server', targetId: req.params.id });
+    res.json({ code: 0, message: '已重置主机密钥指纹，下次连接将重新记录' });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
 router.post('/:id/monitor', async (req, res) => {
   try {
     const server = await db.queryOne('SELECT * FROM servers WHERE id = ?', [req.params.id]);
@@ -594,6 +607,125 @@ router.get('/:id/metrics', async (req, res) => {
       [req.params.id, hours]
     );
     res.json({ code: 0, data: metrics });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// ---------- 监控 Agent ----------
+
+async function getServerForAgent(req, res) {
+  const server = await db.queryOne('SELECT * FROM servers WHERE id = ?', [req.params.id]);
+  if (!server) {
+    res.json({ code: 404, message: '服务器不存在' });
+    return null;
+  }
+  return server;
+}
+
+function buildPanelUrl(req) {
+  const proto = String(req.get('x-forwarded-proto') || req.protocol || 'http');
+  return `${proto}://${req.get('host')}`;
+}
+
+// GET /api/servers/:id/agent/status
+router.get('/:id/agent/status', async (req, res) => {
+  try {
+    const server = await getServerForAgent(req, res);
+    if (!server) return;
+    const { isAgentFreshAsync } = require('../services/agent');
+    res.json({
+      code: 0,
+      data: {
+        installed: !!server.agent_token_hash,
+        fresh: await isAgentFreshAsync(server),
+        lastReportAt: server.agent_last_report_at,
+        version: server.agent_version || '',
+        hasCredentials: !!(server.password_encrypted || server.private_key_encrypted)
+      }
+    });
+  } catch (err) {
+    res.json({ code: 500, message: err.message });
+  }
+});
+
+// POST /api/servers/:id/agent/install — 生成 token 并通过 SSH 一键部署
+router.post('/:id/agent/install', async (req, res) => {
+  try {
+    const server = await getServerForAgent(req, res);
+    if (!server) return;
+    const { issueAgentToken } = require('../services/agent');
+    const { buildAgentScript, buildInstaller } = require('../services/agent-script');
+    const { getSettingValue } = require('../services/telegram');
+
+    const token = await issueAgentToken(server.id);
+    const configured = String(await getSettingValue('agent_panel_url', '') || '').trim().replace(/\/+$/, '');
+    const panelUrl = configured || buildPanelUrl(req);
+    const interval = Math.min(Math.max(parseInt(req.body?.interval, 10) || parseInt(await getSettingValue('agent_interval', '5'), 10) || 5, 2), 60);
+
+    const installer = buildInstaller(buildAgentScript(), { panelUrl, token, interval });
+    const command = `sh -s <<'__SSHWEB_AGENT_INSTALL__'\n${installer}\n__SSHWEB_AGENT_INSTALL__`;
+
+    let conn;
+    try {
+      conn = await createSSHConnection(server);
+      const { out } = await execCommand(conn, command, 60000);
+      const ok = out.includes('AGENT_OK');
+      await writeAuditLog({
+        userId: req.user.id, username: req.user.username,
+        action: 'agent_install', targetType: 'server', targetId: server.id,
+        status: ok ? 'success' : 'failed', detail: { out: out.slice(0, 500) }
+      });
+      res.json({
+        code: ok ? 0 : 500,
+        message: ok ? 'Agent 安装成功' : '安装脚本执行异常',
+        data: { log: out.slice(-2000), token, panelUrl, interval, manualCommand: `curl -fsSL '${panelUrl}/api/agent/install.sh?token=${token}' | sh` }
+      });
+    } finally {
+      try { if (conn) conn.end(); } catch {}
+    }
+  } catch (err) {
+    res.json({ code: 500, message: '安装失败: ' + err.message });
+  }
+});
+
+// POST /api/servers/:id/agent/uninstall — SSH 停止并清除
+router.post('/:id/agent/uninstall', async (req, res) => {
+  try {
+    const server = await getServerForAgent(req, res);
+    if (!server) return;
+    const { buildUninstaller } = require('../services/agent-script');
+    const { clearAgentToken } = require('../services/agent');
+    const command = `sh -s <<'__SSHWEB_AGENT_RM__'\n${buildUninstaller()}\n__SSHWEB_AGENT_RM__`;
+
+    let conn;
+    try {
+      conn = await createSSHConnection(server);
+      const { out } = await execCommand(conn, command, 30000);
+      await clearAgentToken(server.id);
+      await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'agent_uninstall', targetType: 'server', targetId: server.id, status: 'success' });
+      res.json({ code: 0, message: 'Agent 已卸载', data: { log: out.slice(-1000) } });
+    } finally {
+      try { if (conn) conn.end(); } catch {}
+    }
+  } catch (err) {
+    res.json({ code: 500, message: '卸载失败: ' + err.message });
+  }
+});
+
+// POST /api/servers/:id/agent/reset-token — 重置 token，旧 agent 立即失效
+router.post('/:id/agent/reset-token', async (req, res) => {
+  try {
+    const server = await getServerForAgent(req, res);
+    if (!server) return;
+    const { issueAgentToken } = require('../services/agent');
+    const token = await issueAgentToken(server.id);
+    await writeAuditLog({ userId: req.user.id, username: req.user.username, action: 'agent_reset_token', targetType: 'server', targetId: server.id, status: 'success' });
+    res.json({
+      code: 0,
+      message: 'Token 已重置，旧 Agent 将无法上报；请重新安装',
+      data: { token, manualCommand: `curl -fsSL '${buildPanelUrl(req)}/api/agent/install.sh?token=${token}' | sh` }
+    });
   } catch (err) {
     res.json({ code: 500, message: err.message });
   }

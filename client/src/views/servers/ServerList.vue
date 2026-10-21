@@ -64,6 +64,10 @@
               <span class="status-dot" :class="row.status"></span>
               <span class="card-host" :title="row.host + ':' + row.port">{{ row.host }}:{{ row.port }}</span>
               <span class="card-user">{{ row.username }}</span>
+              <span v-if="row.agent_last_report_at" class="agent-badge" :class="agentFresh(row) ? 'on' : 'stale'"
+                    :title="agentFresh(row) ? `Agent 实时上报中（${row.agent_version || ''}）` : 'Agent 已安装但上报超时'">
+                Agent
+              </span>
             </div>
           </div>
         </div>
@@ -107,9 +111,11 @@
               <el-dropdown-menu>
                 <el-dropdown-item command="test" :disabled="row.testing"><el-icon><Connection /></el-icon>测试连接</el-dropdown-item>
                 <el-dropdown-item command="monitor" :disabled="row.monitoring"><el-icon><DataLine /></el-icon>采集状态</el-dropdown-item>
+                <el-dropdown-item command="agent"><el-icon><Cpu /></el-icon>Agent 监控</el-dropdown-item>
                 <el-dropdown-item command="edit"><el-icon><Edit /></el-icon>编辑</el-dropdown-item>
                 <el-dropdown-item divided v-for="m in [1,3,6,12]" :key="m" :command="'renew_' + m">续费 {{ m }} 个月</el-dropdown-item>
-                <el-dropdown-item divided command="delete"><el-icon><Delete /></el-icon>删除</el-dropdown-item>
+                <el-dropdown-item command="reset_host_key" divided><el-icon><Refresh /></el-icon>重置主机密钥指纹</el-dropdown-item>
+                <el-dropdown-item command="delete"><el-icon><Delete /></el-icon>删除</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -140,6 +146,39 @@
       </template>
     </el-dialog>
 
+    <!-- Agent 监控对话框 -->
+    <el-dialog v-model="agentDialog.visible" :title="`Agent 实时监控 · ${agentDialog.server?.name || ''}`" width="680px" destroy-on-close>
+      <div class="agent-status-row">
+        <el-tag v-if="agentDialog.installed" :type="agentDialog.fresh ? 'success' : 'warning'" effect="dark" size="small">
+          {{ agentDialog.fresh ? '实时上报中' : '已安装 · 上报超时' }}
+        </el-tag>
+        <el-tag v-else type="info" size="small">未安装</el-tag>
+        <span class="text-muted" style="font-size:12px" v-if="agentDialog.installed">
+          最近上报：{{ agentDialog.lastReportAt || '-' }}<template v-if="agentDialog.version"> · v{{ agentDialog.version }}</template>
+        </span>
+      </div>
+      <el-alert
+        title="Agent 常驻在服务器上，每 5 秒主动推送指标（可在系统设置调整间隔），面板零 SSH 开销、秒级实时；未安装 Agent 的服务器继续走 SSH 采集。"
+        type="info" show-icon :closable="false" style="margin:12px 0"
+      />
+      <div class="agent-actions">
+        <el-button type="primary" :loading="agentDialog.installing" @click="installAgent">一键安装（SSH 部署）</el-button>
+        <el-button :disabled="!agentDialog.installed" :loading="agentDialog.uninstalling" @click="uninstallAgent">卸载</el-button>
+        <el-button :disabled="!agentDialog.installed" @click="resetToken">重置 Token</el-button>
+      </div>
+      <div v-if="agentDialog.manualCommand" class="agent-manual">
+        <div class="agent-manual-head">
+          <span>手动安装（在目标服务器执行，Token 只展示一次，请勿外泄）</span>
+          <el-button text size="small" @click="copyText(agentDialog.manualCommand)">复制命令</el-button>
+        </div>
+        <pre class="agent-cmd">{{ agentDialog.manualCommand }}</pre>
+      </div>
+      <div v-if="agentDialog.log" class="agent-log">
+        <el-divider>执行日志</el-divider>
+        <pre class="agent-cmd">{{ agentDialog.log }}</pre>
+      </div>
+    </el-dialog>
+
     <!-- 快速执行 -->
     <el-dialog v-model="showExecDialog" title="快速执行命令" width="600px">
       <el-input v-model="quickCommand" placeholder="输入要执行的命令" />
@@ -155,9 +194,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { More, Search, Upload, Download, Plus, Box, Connection, Edit, Delete, DataLine } from '@element-plus/icons-vue'
+import { More, Search, Upload, Download, Plus, Box, Connection, Edit, Delete, DataLine, Refresh, Cpu } from '@element-plus/icons-vue'
 import api from '../../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -226,9 +265,112 @@ function expiryClass(date) {
 function handleCardAction(cmd, row) {
   if (cmd === 'test') testConn(row)
   else if (cmd === 'monitor') refreshMonitor(row)
+  else if (cmd === 'agent') openAgentDialog(row)
   else if (cmd === 'edit') router.push('/servers/edit/' + row.id)
   else if (cmd === 'delete') deleteServer(row)
+  else if (cmd === 'reset_host_key') resetHostKey(row)
   else if (cmd.startsWith('renew_')) renewServer(row, Number(cmd.slice(6)))
+}
+
+// ---------- Agent 实时监控 ----------
+const agentDialog = reactive({
+  visible: false, server: null, installed: false, fresh: false,
+  lastReportAt: '', version: '', installing: false, uninstalling: false,
+  manualCommand: '', log: ''
+})
+
+function agentFresh(row) {
+  if (!row.agent_last_report_at) return false
+  return (Date.now() - new Date(row.agent_last_report_at).getTime()) < 90000
+}
+
+async function openAgentDialog(row) {
+  agentDialog.server = row
+  agentDialog.manualCommand = ''
+  agentDialog.log = ''
+  agentDialog.visible = true
+  try {
+    const res = await api.get(`/api/servers/${row.id}/agent/status`)
+    if (res.code === 0) {
+      agentDialog.installed = res.data.installed
+      agentDialog.fresh = res.data.fresh
+      agentDialog.lastReportAt = res.data.lastReportAt || ''
+      agentDialog.version = res.data.version || ''
+    }
+  } catch {}
+}
+
+async function installAgent() {
+  const row = agentDialog.server
+  try {
+    await ElMessageBox.confirm(
+      `将通过 SSH 把监控 Agent 部署到 "${row.name}"（/etc/sshweb-agent/，systemd 或 nohup 常驻运行），继续？`,
+      '安装监控 Agent', { type: 'info' }
+    )
+  } catch { return }
+  agentDialog.installing = true
+  try {
+    const res = await api.post(`/api/servers/${row.id}/agent/install`, {}, { timeout: 90000 })
+    if (res.code === 0) {
+      agentDialog.log = res.data?.log || ''
+      agentDialog.manualCommand = res.data?.manualCommand || ''
+      agentDialog.installed = true
+      agentDialog.fresh = false
+      ElMessage.success('Agent 安装成功，等待首次上报…')
+      setTimeout(() => { loadData() }, 8000)
+    } else {
+      agentDialog.log = res.data?.log || res.message
+      ElMessage.error(res.message || '安装失败')
+    }
+  } finally { agentDialog.installing = false }
+}
+
+async function uninstallAgent(row) {
+  const target = row || agentDialog.server
+  try {
+    await ElMessageBox.confirm(`将从 "${target.name}" 停止并删除 Agent（/etc/sshweb-agent/），继续？`, '卸载 Agent', { type: 'warning' })
+  } catch { return }
+  agentDialog.uninstalling = true
+  try {
+    const res = await api.post(`/api/servers/${target.id}/agent/uninstall`, {}, { timeout: 60000 })
+    if (res.code === 0) {
+      ElMessage.success(res.message || '已卸载')
+      agentDialog.installed = false
+      agentDialog.fresh = false
+      agentDialog.manualCommand = ''
+      loadData()
+    } else ElMessage.error(res.message || '卸载失败')
+  } finally { agentDialog.uninstalling = false }
+}
+
+async function resetToken(row) {
+  const target = row || agentDialog.server
+  try {
+    await ElMessageBox.confirm('重置后旧 Agent 立即失效，需要重新安装/上报。继续？', '重置 Agent Token', { type: 'warning' })
+  } catch { return }
+  const res = await api.post(`/api/servers/${target.id}/agent/reset-token`)
+  if (res.code === 0) {
+    agentDialog.manualCommand = res.data?.manualCommand || ''
+    ElMessage.success('Token 已重置')
+  } else ElMessage.error(res.message)
+}
+
+function copyText(text) {
+  const done = () => ElMessage.success('已复制')
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(() => {})
+  else done()
+}
+
+// 服务器重装/更换后 Host key 指纹会变，终端连接会被 TOFU 校验拦截，确认后在此重置
+async function resetHostKey(row) {
+  await ElMessageBox.confirm(
+    `确定重置 "${row.name}" 的主机密钥指纹吗？重置后下次打开终端会重新记录当前指纹（仅在确认服务器是自己重装/更换过时才需要）。`,
+    '重置主机密钥指纹',
+    { type: 'warning' }
+  )
+  const res = await api.post(`/api/servers/${row.id}/reset-host-key`)
+  if (res.code === 0) ElMessage.success(res.message)
+  else ElMessage.error(res.message)
 }
 
 async function testConn(row) {
@@ -437,6 +579,39 @@ async function submitImport() {
 }
 .card-host { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
 .card-user { color: var(--text-muted); font-size: 11px; }
+
+/* Agent 标识 */
+.agent-badge {
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+.agent-badge.on { background: rgba(22, 163, 74, 0.15); color: #16a34a; }
+.agent-badge.stale { background: rgba(245, 158, 11, 0.15); color: #d97706; }
+
+/* Agent 对话框 */
+.agent-status-row { display: flex; align-items: center; gap: 10px; }
+.agent-actions { display: flex; gap: 10px; margin: 4px 0 8px; flex-wrap: wrap; }
+.agent-manual { margin-top: 8px; }
+.agent-manual-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; color: var(--text-muted); margin-bottom: 6px;
+}
+.agent-cmd {
+  background: var(--surface-subtle, rgba(8, 145, 178, 0.06));
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: 12px 'JetBrains Mono', ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+}
 
 /* 状态点 */
 .status-dot {

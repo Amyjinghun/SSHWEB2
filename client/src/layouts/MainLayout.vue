@@ -43,6 +43,8 @@
           <el-menu-item index="/batch">批量命令</el-menu-item>
           <el-menu-item index="/templates">命令模板</el-menu-item>
           <el-menu-item index="/history">执行历史</el-menu-item>
+          <el-menu-item index="/term-logs">终端录制</el-menu-item>
+          <el-menu-item index="/command-manual">命令大全</el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="ops">

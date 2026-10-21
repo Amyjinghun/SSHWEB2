@@ -3,6 +3,8 @@ const db = require('../db');
 const { createSSHConnection, execCommand, isDangerousCommand } = require('../ssh/connection');
 const config = require('../config');
 const { createAndNotifyAlert, getAlertNumber, getAlertBoolean, getSettingValue } = require('../services/telegram');
+const { baseAlertVars, checkMetricAlerts } = require('../services/metric-alerts');
+const { isAgentFresh } = require('../services/agent');
 const ruleEngine = require('../services/rule-engine');
 const { runWithConcurrency } = require('../utils/async');
 const { cleanupOldData } = require('../services/cleanup');
@@ -105,35 +107,6 @@ function parseKeyValueOutput(out) {
   return data;
 }
 
-
-function parseTags(tags) {
-  if (!tags) return [];
-  if (Array.isArray(tags)) return tags;
-  try {
-    const parsed = JSON.parse(tags);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return String(tags).split(',').map(t => t.trim()).filter(Boolean);
-  }
-}
-
-function baseAlertVars(server, extra = {}) {
-  return {
-    server_name: server.name || server.host || '-',
-    name: server.name || server.host || '-',
-    host: server.host || '-',
-    ip: server.host || '-',
-    port: server.port || 22,
-    username: server.username || '-',
-    auth_type: server.auth_type || '-',
-    group_name: server.group_name || server.groupName || '-',
-    tags: parseTags(server.tags),
-    remark: server.remark || '-',
-    os_info: server.os_info || '-',
-    expires_at: server.expires_at || '-',
-    ...extra
-  };
-}
 
 function buildCollectCommand() {
   return `sh -s <<'__SSHWEB_MONITOR__'\n${COLLECT_SCRIPT}\n__SSHWEB_MONITOR__`;
@@ -239,72 +212,6 @@ async function maybeCollectStaticInfo(server, conn) {
   }
 }
 
-async function checkMetricAlerts(server, metrics) {
-  const serverName = server.name || server.host;
-
-  const enableCpu = await getAlertBoolean('alert_enable_cpu', config.alerts.enableCpuAlert);
-  if (enableCpu) {
-    const cpuThreshold = await getAlertNumber('alert_cpu_threshold', config.alerts.cpuThreshold);
-    if (metrics.cpu >= cpuThreshold) {
-      await createAndNotifyAlert({
-        serverId: server.id,
-        level: 'critical',
-        title: `CPU占用过高：${serverName}`,
-        content: `服务器：${serverName}\nIP：${server.host}\n当前CPU：${metrics.cpu.toFixed(2)}%\n阈值：${cpuThreshold}%`,
-        templateKey: 'alert_template_cpu',
-        variables: baseAlertVars(server, {
-          cpu_usage: metrics.cpu.toFixed(2),
-          threshold: cpuThreshold,
-          os_info: metrics.osInfo || server.os_info || '-'
-        })
-      });
-    }
-  }
-
-  const enableMemory = await getAlertBoolean('alert_enable_memory', config.alerts.enableMemoryAlert);
-  if (enableMemory) {
-    const memoryThreshold = await getAlertNumber('alert_memory_threshold', config.alerts.memoryThreshold);
-    if (metrics.memUsage >= memoryThreshold) {
-      await createAndNotifyAlert({
-        serverId: server.id,
-        level: 'critical',
-        title: `内存占用过高：${serverName}`,
-        content: `服务器：${serverName}\nIP：${server.host}\n当前内存：${metrics.memUsage.toFixed(2)}%\n已用/总量：${metrics.memUsed}MB / ${metrics.memTotal}MB\n阈值：${memoryThreshold}%`,
-        templateKey: 'alert_template_memory',
-        variables: baseAlertVars(server, {
-          memory_usage: metrics.memUsage.toFixed(2),
-          memory_used: metrics.memUsed,
-          memory_total: metrics.memTotal,
-          threshold: memoryThreshold,
-          os_info: metrics.osInfo || server.os_info || '-'
-        })
-      });
-    }
-  }
-
-  const enableDisk = await getAlertBoolean('alert_enable_disk', config.alerts.enableDiskAlert);
-  if (enableDisk) {
-    const diskThreshold = await getAlertNumber('alert_disk_threshold', config.alerts.diskThreshold);
-    if (metrics.diskUsage >= diskThreshold) {
-      await createAndNotifyAlert({
-        serverId: server.id,
-        level: 'warning',
-        title: `磁盘占用过高：${serverName}`,
-        content: `服务器：${serverName}\nIP：${server.host}\n根分区磁盘：${metrics.diskUsage.toFixed(2)}%\n已用/总量：${metrics.diskUsed}MB / ${metrics.diskTotal}MB\n阈值：${diskThreshold}%`,
-        templateKey: 'alert_template_disk',
-        variables: baseAlertVars(server, {
-          disk_usage: metrics.diskUsage.toFixed(2),
-          disk_used: metrics.diskUsed,
-          disk_total: metrics.diskTotal,
-          threshold: diskThreshold,
-          os_info: metrics.osInfo || server.os_info || '-'
-        })
-      });
-    }
-  }
-}
-
-
 function parseCronField(field, min, max) {
   const values = new Set();
   const parts = String(field || '').split(',');
@@ -363,6 +270,11 @@ function shouldRunCronNow(cronExpr, now, lastRunAt) {
 }
 
 async function checkOneServer(server) {
+  // Agent 常驻上报中的服务器跳过 SSH 采集：指标由 agent 推送（含入库/告警/缓存更新），
+  // 零 SSH 开销；agent 失联（超过新鲜窗口）时自动回落到下面的 SSH 采集兜底。
+  if (isAgentFresh(server)) {
+    return { ok: true, viaAgent: true };
+  }
   let conn;
   try {
     conn = await createSSHConnection(server);
@@ -530,10 +442,11 @@ async function autoCleanup() {
     const days = {
       audit_days: await getAlertNumber('cleanup_audit_days', 90),
       command_log_days: await getAlertNumber('cleanup_command_log_days', 90),
-      alert_days: await getAlertNumber('cleanup_alert_days', 90)
+      alert_days: await getAlertNumber('cleanup_alert_days', 90),
+      termlog_days: await getAlertNumber('term_record_retention_days', 30)
     };
     const results = await cleanupOldData(days);
-    console.log(`自动数据清理完成：审计日志 ${results.audit_logs} 条，执行历史 ${results.command_logs} 条，告警记录 ${results.alert_logs} 条`);
+    console.log(`自动数据清理完成：审计日志 ${results.audit_logs} 条，执行历史 ${results.command_logs} 条，告警记录 ${results.alert_logs} 条，终端录制 ${results.term_recordings} 个`);
   } catch (err) {
     console.error('自动数据清理失败:', err.message);
   }

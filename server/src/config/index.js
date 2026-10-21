@@ -72,7 +72,11 @@ module.exports = {
   },
   ssh: {
     connectTimeout: parseInt(process.env.SSH_CONNECT_TIMEOUT, 10) || 10000,
-    execTimeout: parseInt(process.env.SSH_EXEC_TIMEOUT, 10) || 60000
+    execTimeout: parseInt(process.env.SSH_EXEC_TIMEOUT, 10) || 60000,
+    // 每个面板用户可同时建立的 SSH 终端会话数上限（防止单账号耗尽连接资源）
+    maxSessionsPerUser: parseInt(process.env.SSH_MAX_SESSIONS_PER_USER, 10) || 20,
+    // 单条终端输入帧大小上限（正常键盘输入/粘贴远小于此）
+    maxDataFrameSize: parseInt(process.env.SSH_MAX_DATA_FRAME, 10) || 1024 * 1024
   },
   telegram: {
     enabled: parseBool(process.env.TG_ENABLED || process.env.TELEGRAM_ENABLED, false),

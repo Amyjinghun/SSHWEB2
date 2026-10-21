@@ -251,9 +251,10 @@ html.dark .el-table {
 }
 
 /* ════════════════════════════════════════
-   按钮
+   按钮（渐变只作用于实心按钮；plain/text/link 保持 EP 原生样式，
+   否则 plain 按钮的彩色文字会撞上渐变底变得不可读）
    ════════════════════════════════════════ */
-.el-button--primary {
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link) {
   background: linear-gradient(135deg, var(--primary-color), var(--primary-light)) !important;
   border: none !important;
   font-weight: 500;
@@ -261,11 +262,11 @@ html.dark .el-table {
   &:hover { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8, 145, 178, 0.3); }
   &:active { transform: translateY(0); }
 }
-.el-button--success {
+.el-button--success:not(.is-plain):not(.is-text):not(.is-link) {
   background: linear-gradient(135deg, var(--color-success), var(--primary-light)) !important;
   border: none !important;
 }
-.el-button--danger {
+.el-button--danger:not(.is-plain):not(.is-text):not(.is-link) {
   background: linear-gradient(135deg, var(--color-danger), #e87070) !important;
   border: none !important;
 }

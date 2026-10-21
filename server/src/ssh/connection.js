@@ -116,6 +116,7 @@ function formatSSHError(err) {
   if (/All configured authentication methods failed|Authentication failed|Permission denied/i.test(message)) return '认证失败，请检查用户名、密码、私钥或目标服务器 SSH 登录策略';
   if (/Cannot parse privateKey|privateKey/i.test(message)) return '私钥格式错误或私钥密码不正确';
   if (/HANDSHAKE|algorithm|no matching/i.test(message)) return 'SSH 握手失败，可能是算法不兼容';
+  if (/Host denied|host key/i.test(message)) return '主机密钥校验失败：服务器指纹与首次连接记录不一致，可能存在中间人攻击；如服务器确实重装或更换过，请在服务器列表重置主机密钥指纹后重连';
   return message;
 }
 
@@ -159,7 +160,14 @@ function createSSHConnection(serverInfo) {
     conn.on('keyboard-interactive', (name, instructions, lang, prompts, finishAuth) => {
       logSSH(tag, '键盘交互认证', `prompts=${prompts.length}`);
       const password = connectConfig.password || '';
-      finishAuth(prompts.map(() => password));
+      // 单个 prompt（通常是 Password:）用保存的密码应答；多个 prompt 说明服务器
+      // 启用了 2FA/MFA（如动态验证码），静态凭据无法应答，直接失败避免把密码填进验证码框。
+      if (prompts.length === 1 && password) {
+        finishAuth([password]);
+        return;
+      }
+      finishAuth(prompts.map(() => ''));
+      finish(reject, new Error('目标服务器启用了交互式二次验证（2FA/MFA），暂不支持自动登录'));
     });
     conn.on('ready', () => {
       logSSH(tag, '连接成功(认证通过)', `总耗时=${Date.now() - start}ms`);

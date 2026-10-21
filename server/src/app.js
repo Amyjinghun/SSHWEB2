@@ -71,6 +71,10 @@ app.use('/api/audit-logs', require('./routes/audit'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/public', require('./routes/public'));
+app.use('/api/ai', require('./routes/ai'));
+app.use('/api/command-manual', require('./routes/command-manual'));
+app.use('/api/term-logs', require('./routes/term-logs'));
+app.use('/api/agent', require('./routes/agent'));
 
 // SPA fallback
 app.get('*', (req, res) => {
